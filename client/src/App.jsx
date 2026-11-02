@@ -1,35 +1,89 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import Layout from './components/common/Layout';
+import ProtectedRoute from './components/common/ProtectedRoute';
+
+// Public and Shared Pages
+import Landing from './pages/Landing';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import InterviewChat from './pages/InterviewChat';
+
+// Student Pages
+import StudentDashboard from './pages/student/StudentDashboard';
+import OpeningDetails from './pages/student/OpeningDetails';
+import MyApplications from './pages/student/MyApplications';
+import StudentProfile from './pages/student/StudentProfile';
+
+// Recruiter Pages
+import RecruiterDashboard from './pages/recruiter/RecruiterDashboard';
+import PostEditOpening from './pages/recruiter/PostEditOpening';
+import OpeningCandidates from './pages/recruiter/OpeningCandidates';
+import CandidateProfile from './pages/recruiter/CandidateProfile';
+
+// Admin Pages
+import AdminDashboard from './pages/admin/AdminDashboard';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 1,
+      staleTime: 5 * 60 * 1000,
+    },
+  },
+});
 
 function App() {
-  return(
-    <div className="flex items-center justify-center min-h-screen bg-gray-100 p-4">
-      <div className="max-w-sm w-full bg-white rounded-2xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
-        <img
-          className="w-full h-48 object-cover"
-          src="https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&q=80&w=600"
-          alt="Laptop on a desk"
-        />
-        <div className="p-6">
-          <span className="inline-block px-3 py-1 mb-3 text-xs font-semibold text-blue-600 bg-blue-100 rounded-full">
-            Technology
-          </span>
-          <h2 className="text-xl font-bold text-gray-800 mb-2">
-            Tailwind CSS with React
-          </h2>
-          <p className="text-gray-600 text-sm mb-5 leading-relaxed">
-            Building beautiful, responsive user interfaces is much easier when you combine the power of React components with Tailwind's utility classes.
-          </p>
-          <button className="w-full bg-gray-900 text-white font-medium py-2.5 rounded-lg hover:bg-gray-800 transition-colors focus:ring-4 focus:ring-gray-300">
-            Read Article
-          </button>
-        </div>
-      </div>
-    </div>
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            {/* All views wrapped with the shared Layout shell */}
+            <Route element={<Layout />}>
+              {/* Public Routes */}
+              <Route path="/" element={<Landing />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+
+              {/* Student Protected Routes */}
+              <Route element={<ProtectedRoute allowedRoles={['student']} />}>
+                <Route path="/student/dashboard" element={<StudentDashboard />} />
+                <Route path="/student/openings/:id" element={<OpeningDetails />} />
+                <Route path="/student/applications" element={<MyApplications />} />
+                <Route path="/student/profile" element={<StudentProfile />} />
+              </Route>
+
+              {/* Recruiter Protected Routes */}
+              <Route element={<ProtectedRoute allowedRoles={['recruiter']} />}>
+                <Route path="/recruiter/dashboard" element={<RecruiterDashboard />} />
+                <Route path="/recruiter/openings/new" element={<PostEditOpening />} />
+                <Route path="/recruiter/openings/:id/edit" element={<PostEditOpening />} />
+                <Route path="/recruiter/openings/:id/candidates" element={<OpeningCandidates />} />
+                <Route path="/recruiter/candidates/:id" element={<CandidateProfile />} />
+              </Route>
+
+              {/* Admin Protected Routes */}
+              <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
+                <Route path="/admin/dashboard" element={<AdminDashboard />} />
+              </Route>
+
+              {/* Shared Authenticated Routes */}
+              <Route element={<ProtectedRoute allowedRoles={['student', 'recruiter', 'admin']} />}>
+                <Route path="/chat" element={<InterviewChat />} />
+                <Route path="/chat/:applicationId" element={<InterviewChat />} />
+              </Route>
+
+              {/* Catch-all */}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </QueryClientProvider>
   );
 }
 
-export default App
+export default App;
