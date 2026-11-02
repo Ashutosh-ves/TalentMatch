@@ -386,6 +386,16 @@ export function OpeningCandidates() {
                     >
                       Profile →
                     </button>
+
+                    {(candidate.status === 'shortlisted' || candidate.status === 'accepted') && (
+                      <Link
+                        to={`/chat/${candidate._id}`}
+                        className="flex-1 md:w-full bg-surface-container border border-border-hairline text-primary hover:bg-primary hover:text-on-primary font-label-mono text-xs py-2 px-4 transition-colors uppercase text-center flex items-center justify-center gap-1 font-bold"
+                      >
+                        <span className="material-symbols-outlined text-sm">chat</span>
+                        Chat
+                      </Link>
+                    )}
                   </div>
                 </div>
               </article>

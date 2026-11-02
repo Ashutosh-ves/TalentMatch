@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { SocketProvider } from './context/SocketContext';
 import Layout from './components/common/Layout';
 import ProtectedRoute from './components/common/ProtectedRoute';
 
@@ -39,8 +40,9 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <BrowserRouter>
-          <Routes>
+        <SocketProvider>
+          <BrowserRouter>
+            <Routes>
             {/* All views wrapped with the shared Layout shell */}
             <Route element={<Layout />}>
               {/* Public Routes */}
@@ -81,6 +83,7 @@ function App() {
             </Route>
           </Routes>
         </BrowserRouter>
+        </SocketProvider>
       </AuthProvider>
     </QueryClientProvider>
   );
