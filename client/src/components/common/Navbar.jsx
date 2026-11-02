@@ -18,19 +18,19 @@ export function Navbar() {
 
   return (
     <header className="w-full top-0 bg-background border-b border-border-hairline sticky z-50">
-      <div className="flex justify-between items-center w-full px-4 md:px-16 py-5 max-w-[1440px] mx-auto">
+      <div className="flex justify-between items-center w-full px-4 md:px-8 lg:px-16 py-5 max-w-[1440px] mx-auto">
         {/* Brand Logo */}
-        <div className="flex items-center gap-8">
+        <div className="flex items-center gap-4 lg:gap-8">
           <Link
             to={isAuthenticated ? getRoleDashboard(role) : '/'}
-            className="font-display-xl text-2xl md:text-3xl font-extrabold tracking-tighter text-primary hover:text-match-indicator transition-colors"
+            className="font-display-xl text-2xl md:text-3xl font-extrabold tracking-tighter text-primary hover:text-match-indicator transition-colors whitespace-nowrap"
           >
             TALENT MATCH
           </Link>
 
           {/* Role-Specific Navigation Links (Desktop) */}
           {isAuthenticated && (
-            <nav className="hidden md:flex gap-6 items-center font-label-mono text-label-mono">
+            <nav className="hidden md:flex gap-4 lg:gap-6 items-center font-label-mono text-label-mono text-xs lg:text-sm">
               {role === 'student' && (
                 <>
                   <NavLink to="/student/dashboard" className={navLinkClass}>
@@ -74,28 +74,28 @@ export function Navbar() {
         </div>
 
         {/* Trailing Actions */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           {isAuthenticated ? (
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               {/* Role badge */}
-              <span className="px-2.5 py-1 text-[11px] font-label-mono font-semibold bg-surface-container border border-border-hairline text-primary uppercase rounded tracking-wider">
+              <span className="px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] sm:text-[11px] font-label-mono font-semibold bg-surface-container border border-border-hairline text-primary uppercase rounded tracking-wider">
                 {role}
               </span>
 
               {/* User info */}
-              <span className="hidden sm:inline font-label-mono text-xs text-text-muted">
+              <span className="hidden lg:inline font-label-mono text-xs text-text-muted max-w-[150px] truncate">
                 {user?.name || user?.email}
               </span>
 
               {/* Avatar circle */}
-              <div className="w-8 h-8 rounded-full border border-border-hairline bg-primary text-on-primary flex items-center justify-center font-display-xl font-bold text-xs uppercase">
+              <div className="w-8 h-8 rounded-full border border-border-hairline bg-primary text-on-primary flex items-center justify-center font-display-xl font-bold text-xs uppercase shrink-0">
                 {(user?.name || user?.email || role || 'U')[0]}
               </div>
 
               {/* Sign out button */}
               <button
                 onClick={handleLogout}
-                className="font-label-mono text-label-mono text-xs px-3 py-1.5 border border-border-hairline text-primary hover:bg-black hover:text-white transition-all uppercase tracking-wider"
+                className="font-label-mono text-label-mono text-xs px-2.5 py-1 sm:px-3 sm:py-1.5 border border-border-hairline text-primary hover:bg-black hover:text-white transition-all uppercase tracking-wider whitespace-nowrap"
               >
                 Sign Out
               </button>

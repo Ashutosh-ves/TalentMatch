@@ -124,7 +124,7 @@ export function MyApplications() {
             return (
               <div
                 key={app._id}
-                className="group flex flex-col md:flex-row md:items-center justify-between gap-6 p-6 md:p-8 bg-surface-container-lowest border border-border-hairline hover:shadow-[0_10px_30px_rgba(0,0,0,0.03)] transition-all duration-300"
+                className="group flex flex-col lg:flex-row lg:items-center justify-between gap-6 p-6 md:p-8 bg-surface-container-lowest border border-border-hairline hover:shadow-[0_10px_30px_rgba(0,0,0,0.03)] transition-all duration-300"
               >
                 {/* Opening & Company Info */}
                 <div className="flex items-center gap-6 md:gap-8 flex-grow">
@@ -152,7 +152,7 @@ export function MyApplications() {
                 </div>
 
                 {/* Status Column & Action Buttons */}
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 md:gap-6 shrink-0 border-t border-border-hairline md:border-t-0 md:border-l pt-4 md:pt-0 md:pl-8 mt-2 md:mt-0">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 lg:gap-6 shrink-0 border-t border-border-hairline lg:border-t-0 lg:border-l pt-4 lg:pt-0 lg:pl-8 mt-2 lg:mt-0">
                   <div className="flex flex-col gap-1">
                     <span className="font-label-sm text-[11px] text-text-muted uppercase tracking-widest">
                       Status
