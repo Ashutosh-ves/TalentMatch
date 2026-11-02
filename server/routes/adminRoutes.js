@@ -33,7 +33,6 @@ router.use(roleMiddleware('admin'));
 
 // Pending recruiters list
 router.get('/recruiters/pending', getPendingRecruiters);
-router.get('/pending-recruiters', getPendingRecruiters);
 
 // Approve and reject actions
 router.patch('/recruiters/:id/approve', idParamValidation, approveRecruiter);

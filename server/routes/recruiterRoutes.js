@@ -41,7 +41,7 @@ router.delete('/me', roleMiddleware.checkRole('recruiter', 'admin'), deleteRecru
 
 // Collection routes
 router.route('/')
-  .get(getAllRecruiters)
+  .get(roleMiddleware('admin'), getAllRecruiters)
   .post(roleMiddleware.checkRole('recruiter', 'admin'), profileValidation, createRecruiterProfile);
 
 // Parameterized routes

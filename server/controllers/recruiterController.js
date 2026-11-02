@@ -80,7 +80,7 @@ const getMyRecruiterProfile = async (req, res, next) => {
 
 // @desc    Get recruiter profile by ID (Recruiter ID or User ID)
 // @route   GET /api/recruiters/:id
-// @access  Private
+// @access  Private (Self or Admin)
 const getRecruiterById = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -100,6 +100,20 @@ const getRecruiterById = async (req, res, next) => {
       });
     }
 
+    const recruiterUserId = recruiter.userId?._id
+      ? recruiter.userId._id.toString()
+      : recruiter.userId?.toString();
+
+    const isSelf = req.user && req.user._id.toString() === recruiterUserId;
+    const isAdmin = req.user && req.user.role === 'admin';
+
+    if (!isAdmin && !isSelf) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: You do not have permission to view this recruiter profile',
+      });
+    }
+
     return res.status(200).json({
       success: true,
       recruiter,
@@ -111,9 +125,16 @@ const getRecruiterById = async (req, res, next) => {
 
 // @desc    Get all recruiter profiles
 // @route   GET /api/recruiters
-// @access  Private
+// @access  Private (Admin only)
 const getAllRecruiters = async (req, res, next) => {
   try {
+    if (!req.user || req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: Admin access required to list recruiter profiles',
+      });
+    }
+
     const recruiters = await Recruiter.find().populate('userId', 'name email role status createdAt');
     return res.status(200).json({
       success: true,

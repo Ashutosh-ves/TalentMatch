@@ -78,7 +78,7 @@ router.post('/sync-github', roleMiddleware('student', 'admin'), syncGithubValida
 
 // Collection routes
 router.route('/')
-  .get(getAllStudents)
+  .get(roleMiddleware('admin'), getAllStudents)
   .post(roleMiddleware('student', 'admin'), profileValidation, createStudentProfile);
 
 // Parameterized routes

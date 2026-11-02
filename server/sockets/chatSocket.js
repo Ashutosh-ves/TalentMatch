@@ -73,6 +73,17 @@ const initChatSocket = (io) => {
           return;
         }
 
+        // Chat gating: only allowed when application status is 'shortlisted' or 'accepted'
+        if (!['shortlisted', 'accepted'].includes(application.status)) {
+          const errPayload = {
+            status: 403,
+            message: `Forbidden: Chat is only allowed when application status is shortlisted or accepted (current status: "${application.status}")`,
+          };
+          socket.emit('error', errPayload);
+          if (typeof callback === 'function') callback({ success: false, ...errPayload });
+          return;
+        }
+
         const roomName = `application_${applicationId}`;
         socket.join(roomName);
 
@@ -137,6 +148,17 @@ const initChatSocket = (io) => {
 
         if (!isApplicant && !isRecruiter && !isAdmin) {
           const errPayload = { message: 'Forbidden: You cannot send messages for this application' };
+          socket.emit('error', errPayload);
+          if (typeof callback === 'function') callback({ success: false, ...errPayload });
+          return;
+        }
+
+        // Chat gating: only allowed when application status is 'shortlisted' or 'accepted'
+        if (!['shortlisted', 'accepted'].includes(application.status)) {
+          const errPayload = {
+            status: 403,
+            message: `Forbidden: Cannot send messages. Chat is only allowed when application status is shortlisted or accepted (current status: "${application.status}")`,
+          };
           socket.emit('error', errPayload);
           if (typeof callback === 'function') callback({ success: false, ...errPayload });
           return;

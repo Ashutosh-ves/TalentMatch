@@ -55,11 +55,17 @@ const getAllOpenings = async (req, res, next) => {
   try {
     const query = {};
 
-    if (req.query.status) {
-      query.status = req.query.status;
-    } else if (req.user.role === 'student') {
-      // Default students to seeing active openings
-      query.status = 'active';
+    if (req.user && req.user.role === 'student') {
+      // Students may only see active openings or openings they have applied to (ignore ?status)
+      const appliedOpeningIds = await Application.find({ studentId: req.user._id }).distinct('openingId');
+      query.$or = [
+        { status: 'active' },
+        { _id: { $in: appliedOpeningIds } },
+      ];
+    } else {
+      if (req.query.status) {
+        query.status = req.query.status;
+      }
     }
 
     const openings = await Opening.find(query)
@@ -122,6 +128,21 @@ const getOpeningById = async (req, res, next) => {
         success: false,
         message: 'Opening not found',
       });
+    }
+
+    // Students may only see openings with status "active" unless they have applied to that opening
+    if (req.user && req.user.role === 'student' && opening.status !== 'active') {
+      const hasApplied = await Application.exists({
+        studentId: req.user._id,
+        openingId: opening._id,
+      });
+
+      if (!hasApplied) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Students may only view active openings or openings they have applied to',
+        });
+      }
     }
 
     return res.status(200).json({

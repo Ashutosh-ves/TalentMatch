@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 const { validationResult } = require('express-validator');
 const Student = require('../models/Student');
+const Application = require('../models/Application');
+const Opening = require('../models/Opening');
 const { syncStudentGithubData } = require('../services/githubService');
 
 // Helper to find student by either Student _id or User _id
@@ -94,7 +96,7 @@ const getMyStudentProfile = async (req, res, next) => {
 
 // @desc    Get student profile by ID (Student ID or User ID)
 // @route   GET /api/students/:id
-// @access  Private
+// @access  Private (Self, Admin, or Recruiter whose opening student applied to)
 const getStudentById = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -114,6 +116,34 @@ const getStudentById = async (req, res, next) => {
       });
     }
 
+    const studentUserId = student.userId?._id
+      ? student.userId._id.toString()
+      : student.userId?.toString();
+
+    const isSelf = req.user && req.user._id.toString() === studentUserId;
+    const isAdmin = req.user && req.user.role === 'admin';
+    let isAuthorizedRecruiter = false;
+
+    if (req.user && req.user.role === 'recruiter') {
+      const recruiterOpeningIds = await Opening.find({ recruiterId: req.user._id }).distinct('_id');
+      if (recruiterOpeningIds.length > 0) {
+        const hasApplication = await Application.exists({
+          studentId: studentUserId,
+          openingId: { $in: recruiterOpeningIds },
+        });
+        if (hasApplication) {
+          isAuthorizedRecruiter = true;
+        }
+      }
+    }
+
+    if (!isAdmin && !isSelf && !isAuthorizedRecruiter) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: You do not have permission to view this student profile',
+      });
+    }
+
     return res.status(200).json({
       success: true,
       student,
@@ -125,9 +155,16 @@ const getStudentById = async (req, res, next) => {
 
 // @desc    Get all student profiles
 // @route   GET /api/students
-// @access  Private
+// @access  Private (Admin only)
 const getAllStudents = async (req, res, next) => {
   try {
+    if (!req.user || req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: Admin access required to list student profiles',
+      });
+    }
+
     const students = await Student.find().populate('userId', 'name email role status createdAt');
     return res.status(200).json({
       success: true,

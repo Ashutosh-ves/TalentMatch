@@ -48,6 +48,14 @@ const getMessageHistory = async (req, res, next) => {
       });
     }
 
+    // Chat gating: only allowed when application status is 'shortlisted' or 'accepted'
+    if (!['shortlisted', 'accepted'].includes(application.status)) {
+      return res.status(403).json({
+        success: false,
+        message: `Forbidden: Chat is only accessible when the application status is shortlisted or accepted (current status: "${application.status}")`,
+      });
+    }
+
     const messages = await Message.find({ applicationId })
       .populate('senderId', 'name email role')
       .sort({ timestamp: 1 });
@@ -104,6 +112,14 @@ const sendMessage = async (req, res, next) => {
       return res.status(403).json({
         success: false,
         message: 'Forbidden: You are not authorized to send messages for this application',
+      });
+    }
+
+    // Chat gating: only allowed when application status is 'shortlisted' or 'accepted'
+    if (!['shortlisted', 'accepted'].includes(application.status)) {
+      return res.status(403).json({
+        success: false,
+        message: `Forbidden: Cannot send messages. Chat is only allowed when the application status is shortlisted or accepted (current status: "${application.status}")`,
       });
     }
 

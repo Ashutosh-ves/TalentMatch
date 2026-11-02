@@ -92,9 +92,8 @@ router.route('/')
   .get(getAllOpenings)
   .post(roleMiddleware('recruiter', 'admin'), createOpeningValidation, createOpening);
 
-// Ranked candidates routes
+// Ranked candidates route
 router.get('/:id/candidates', roleMiddleware('recruiter', 'admin'), idParamValidation, getOpeningRankedCandidates);
-router.get('/:id/ranked-candidates', roleMiddleware('recruiter', 'admin'), idParamValidation, getOpeningRankedCandidates);
 
 // Parameterized routes
 router.route('/:id')
