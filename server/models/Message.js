@@ -21,6 +21,9 @@ const messageSchema = new mongoose.Schema({
   },
 });
 
+// Compound index on { applicationId, timestamp }
+messageSchema.index({ applicationId: 1, timestamp: 1 });
+
 const Message = mongoose.model('Message', messageSchema);
 
 module.exports = Message;

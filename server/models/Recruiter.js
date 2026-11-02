@@ -14,6 +14,9 @@ const recruiterSchema = new mongoose.Schema({
   },
 });
 
+// Unique index on userId
+recruiterSchema.index({ userId: 1 }, { unique: true });
+
 const Recruiter = mongoose.model('Recruiter', recruiterSchema);
 
 module.exports = Recruiter;

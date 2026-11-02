@@ -30,6 +30,9 @@ const openingSchema = new mongoose.Schema({
   },
 });
 
+// Compound index on { recruiterId, status }
+openingSchema.index({ recruiterId: 1, status: 1 });
+
 const Opening = mongoose.model('Opening', openingSchema);
 
 module.exports = Opening;

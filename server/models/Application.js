@@ -26,6 +26,9 @@ const applicationSchema = new mongoose.Schema({
   },
 });
 
+// Unique compound index on { studentId, openingId }
+applicationSchema.index({ studentId: 1, openingId: 1 }, { unique: true });
+
 const Application = mongoose.model('Application', applicationSchema);
 
 module.exports = Application;
