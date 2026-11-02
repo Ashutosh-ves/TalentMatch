@@ -15,6 +15,10 @@
   --color-text-muted: #666666;
   --color-on-surface-variant: #444748;
   --color-outline-variant: #c4c7c7;
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+  --color-secondary-container: #0356ff;
 
   --font-display-xl: 'Hanken Grotesk', sans-serif;
   --font-headline-lg: 'Hanken Grotesk', sans-serif;
