@@ -1,17 +1,18 @@
 import { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { openingService } from '../../services/openingService';
 import { applicationService } from '../../services/applicationService';
-import { studentService } from '../../services/studentService';
+import { MatchBreakdown } from '../../components/common/MatchBreakdown';
 
 export function OpeningDetails() {
   const { id } = useParams();
+  const location = useLocation();
   const queryClient = useQueryClient();
 
   const [feedback, setFeedback] = useState(null);
 
-  // Fetch opening details
+  // 1. Fetch opening details
   const {
     data: openingData,
     isLoading: isOpeningLoading,
@@ -22,20 +23,19 @@ export function OpeningDetails() {
     enabled: Boolean(id),
   });
 
-  // Fetch student profile for computing live match score
-  const { data: profileData } = useQuery({
-    queryKey: ['myStudentProfile'],
-    queryFn: studentService.getMyProfile,
+  // 2. Fetch recommended openings to retrieve server's live matchBreakdown & matchScore
+  const { data: recsData } = useQuery({
+    queryKey: ['recommendedOpenings'],
+    queryFn: openingService.getRecommendations,
   });
 
-  // Fetch student's existing applications to check if already applied
+  // 3. Fetch student's existing applications to check if already applied
   const { data: appsData } = useQuery({
     queryKey: ['myApplications'],
     queryFn: applicationService.getMyApplications,
   });
 
   const opening = openingData?.opening;
-  const student = profileData?.student;
   const applications = appsData?.applications || [];
 
   const existingApplication = applications.find(
@@ -43,28 +43,40 @@ export function OpeningDetails() {
   );
   const hasApplied = Boolean(existingApplication);
 
-  // Calculate live match score based on student skills vs required skills
-  const studentSkills = student?.skills || [];
-  const requiredSkills = opening?.requiredSkills || [];
+  // 5. Fetch application detail if already applied (contains live server matchBreakdown)
+  const { data: appDetailData } = useQuery({
+    queryKey: ['application', existingApplication?._id],
+    queryFn: () => applicationService.getApplicationById(existingApplication._id),
+    enabled: Boolean(existingApplication?._id),
+  });
 
-  let matchScore = 100;
-  if (requiredSkills.length > 0) {
-    if (studentSkills.length === 0) {
-      matchScore = 0;
-    } else {
-      const studentSkillSet = new Set(studentSkills.map((s) => s.toLowerCase().trim()));
-      const matchCount = requiredSkills.filter((s) =>
-        studentSkillSet.has(s.toLowerCase().trim())
-      ).length;
-      matchScore = Math.round((matchCount / requiredSkills.length) * 100);
-    }
-  }
+  // Find opening in recommended list
+  const recommendedOpening = (recsData?.recommendations || []).find((r) => r._id === id);
+
+  // Server matchBreakdown & matchScore (no client-side recomputation)
+  const matchBreakdown =
+    location.state?.matchBreakdown ||
+    recommendedOpening?.matchBreakdown ||
+    appDetailData?.application?.matchBreakdown ||
+    null;
+
+  const matchScore =
+    location.state?.matchScore !== undefined
+      ? location.state.matchScore
+      : recommendedOpening?.matchScore !== undefined
+      ? recommendedOpening.matchScore
+      : appDetailData?.application?.matchScore !== undefined
+      ? appDetailData.application.matchScore
+      : typeof existingApplication?.matchScore === 'number'
+      ? existingApplication.matchScore
+      : null;
 
   // Apply Mutation
   const applyMutation = useMutation({
     mutationFn: () => applicationService.applyToOpening(id),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['myApplications'] });
+      queryClient.invalidateQueries({ queryKey: ['recommendedOpenings'] });
       setFeedback({
         type: 'success',
         message: res.message || 'Application successfully submitted!',
@@ -97,7 +109,8 @@ export function OpeningDetails() {
         <div className="p-6 bg-error-container text-on-error-container border-l-4 border-error mb-6">
           <p className="font-bold font-label-sm text-sm">Opening Not Found</p>
           <p className="font-body-md text-xs mt-1">
-            {openingError?.response?.data?.message || 'The requested role does not exist or has been removed.'}
+            {openingError?.response?.data?.message ||
+              'The requested role does not exist or has been removed.'}
           </p>
         </div>
         <Link
@@ -110,8 +123,19 @@ export function OpeningDetails() {
     );
   }
 
-  const recruiterName = opening.recruiterId?.name || 'Partner Company';
+  // Company Name with graceful fallback to recruiter name, never crashing
+  const companyDisplayName =
+    opening.companyName ||
+    location.state?.companyName ||
+    opening.recruiterId?.name ||
+    'Partner Company';
+  const recruiterName = opening.recruiterId?.name || '';
   const recruiterEmail = opening.recruiterId?.email || '';
+
+  const requiredSkills = Array.isArray(opening.requiredSkills) ? opening.requiredSkills : [];
+  const matchedSkillSet = new Set(
+    (matchBreakdown?.skills?.matched || []).map((s) => (typeof s === 'string' ? s.toLowerCase().trim() : ''))
+  );
 
   return (
     <div className="py-6 max-w-[1200px] mx-auto flex flex-col gap-10">
@@ -143,7 +167,7 @@ export function OpeningDetails() {
           </div>
           <button
             onClick={() => setFeedback(null)}
-            className="text-text-muted hover:text-primary font-bold text-sm"
+            className="text-text-muted hover:text-primary font-bold text-sm cursor-pointer"
           >
             ×
           </button>
@@ -153,8 +177,8 @@ export function OpeningDetails() {
       {/* Hero Section matching stitch_talent_match_opening_details */}
       <section className="flex flex-col md:flex-row gap-8 justify-between items-start md:items-end">
         <div className="flex flex-col gap-2">
-          <span className="font-label-mono text-xs text-text-muted uppercase tracking-widest">
-            {recruiterName}
+          <span className="font-label-mono text-xs text-text-muted uppercase tracking-widest font-semibold">
+            {companyDisplayName}
           </span>
           <h1 className="font-display-xl text-3xl md:text-5xl font-extrabold text-primary tracking-tighter m-0">
             {opening.title}
@@ -175,7 +199,7 @@ export function OpeningDetails() {
               Match Potential
             </span>
             <span className="font-display-xl text-4xl md:text-5xl font-extrabold text-match-indicator leading-none">
-              {matchScore}%
+              {matchScore !== null ? `${matchScore}%` : '—'}
             </span>
           </div>
 
@@ -202,57 +226,22 @@ export function OpeningDetails() {
 
       {/* Match Breakdown & Overview (Bento Grid) */}
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-8 w-full">
-        {/* Match Score Breakdown */}
+        {/* Match Score Breakdown — 3 server rows: Skills (60%), GitHub languages (25%), Availability (15%) */}
         <div className="col-span-1 bg-surface-container-lowest border border-border-hairline p-8 flex flex-col gap-6">
-          <h2 className="font-headline-md text-xl font-bold text-primary">Match Breakdown</h2>
-
-          <div className="flex flex-col gap-6">
-            {/* Category 1: Technical Skills */}
-            <div className="flex flex-col gap-2">
-              <div className="flex justify-between items-center w-full text-xs font-label-mono">
-                <span className="text-primary uppercase tracking-wider">Skill Alignment</span>
-                <span className="text-match-indicator font-bold">{matchScore}%</span>
-              </div>
-              <div className="w-full h-1.5 bg-surface-container">
-                <div
-                  className="h-full bg-match-indicator transition-all duration-500"
-                  style={{ width: `${matchScore}%` }}
-                ></div>
-              </div>
-            </div>
-
-            {/* Category 2: GitHub Presence */}
-            <div className="flex flex-col gap-2">
-              <div className="flex justify-between items-center w-full text-xs font-label-mono">
-                <span className="text-primary uppercase tracking-wider">GitHub Sync</span>
-                <span className="text-match-indicator font-bold">
-                  {student?.githubUsername ? 'Active' : 'Missing'}
-                </span>
-              </div>
-              <div className="w-full h-1.5 bg-surface-container">
-                <div
-                  className="h-full bg-match-indicator transition-all duration-500"
-                  style={{ width: student?.githubUsername ? '100%' : '20%' }}
-                ></div>
-              </div>
-            </div>
-
-            {/* Category 3: Engagement */}
-            <div className="flex flex-col gap-2">
-              <div className="flex justify-between items-center w-full text-xs font-label-mono">
-                <span className="text-primary uppercase tracking-wider">Availability Match</span>
-                <span className="text-match-indicator font-bold">
-                  {student?.availability ? 'Aligned' : 'Pending'}
-                </span>
-              </div>
-              <div className="w-full h-1.5 bg-surface-container">
-                <div
-                  className="h-full bg-match-indicator transition-all duration-500"
-                  style={{ width: student?.availability ? '100%' : '30%' }}
-                ></div>
-              </div>
-            </div>
+          <div className="flex justify-between items-baseline border-b border-border-hairline pb-4">
+            <h2 className="font-headline-md text-xl font-bold text-primary">Match Breakdown</h2>
+            {matchScore !== null && (
+              <span className="font-display-xl text-xl font-extrabold text-match-indicator">
+                {matchScore}%
+              </span>
+            )}
           </div>
+
+          <MatchBreakdown
+            breakdown={matchBreakdown}
+            requiredSkills={requiredSkills}
+            openingAvailability={opening.availabilityNeeds}
+          />
         </div>
 
         {/* Role Description & Required Stack */}
@@ -271,9 +260,7 @@ export function OpeningDetails() {
             <div className="flex flex-wrap gap-2.5">
               {requiredSkills.length > 0 ? (
                 requiredSkills.map((skill) => {
-                  const isMatched = studentSkills.some(
-                    (s) => s.toLowerCase().trim() === skill.toLowerCase().trim()
-                  );
+                  const isMatched = matchedSkillSet.has(skill.toLowerCase().trim());
                   return (
                     <span
                       key={skill}
@@ -302,15 +289,20 @@ export function OpeningDetails() {
         </div>
       </section>
 
-      {/* Recruiter Information Card */}
+      {/* Recruiter / Posting Company Information Card */}
       <section className="bg-surface-container-lowest border border-border-hairline p-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
         <div>
           <span className="font-label-mono text-xs text-text-muted uppercase tracking-wider">
             Posting Company
           </span>
           <h3 className="font-headline-md text-xl font-bold text-primary mt-1">
-            {recruiterName}
+            {companyDisplayName}
           </h3>
+          {recruiterName && recruiterName !== companyDisplayName && (
+            <p className="font-body-md text-xs text-text-muted mt-0.5">
+              Hiring Lead: {recruiterName}
+            </p>
+          )}
           {recruiterEmail && (
             <p className="font-body-md text-xs text-text-muted mt-0.5">
               Contact: {recruiterEmail}

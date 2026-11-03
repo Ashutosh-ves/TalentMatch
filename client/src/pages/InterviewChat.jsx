@@ -350,7 +350,7 @@ export function InterviewChat() {
 
   const partnerName =
     role === 'student'
-      ? opening.recruiterId?.name || 'Hiring Team'
+      ? opening.companyName || opening.recruiterId?.name || 'Hiring Team'
       : studentUser.name || 'Student Candidate';
 
   const partnerRoleTitle = opening.title || 'Engineering Role';
@@ -361,7 +361,7 @@ export function InterviewChat() {
     const term = debouncedSearchFilter.toLowerCase();
     const candidateName = conv.studentId?.name || '';
     const jobTitle = conv.openingId?.title || '';
-    const company = conv.openingId?.recruiterId?.name || '';
+    const company = conv.openingId?.companyName || conv.openingId?.recruiterId?.name || '';
     return (
       candidateName.toLowerCase().includes(term) ||
       jobTitle.toLowerCase().includes(term) ||
@@ -439,7 +439,7 @@ export function InterviewChat() {
 
                 const cName =
                   role === 'student'
-                    ? cOpening.recruiterId?.name || 'Hiring Team'
+                    ? cOpening.companyName || cOpening.recruiterId?.name || 'Hiring Team'
                     : cStudent.name || 'Candidate';
 
                 const cRole = cOpening.title || 'Engineering Role';

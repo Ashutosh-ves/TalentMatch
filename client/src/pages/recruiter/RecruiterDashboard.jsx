@@ -49,6 +49,12 @@ function OpeningCard({ opening, onDeleteClick }) {
               <span>{opening.availabilityNeeds}</span>
             </>
           )}
+          {opening.companyName && (
+            <>
+              <span>•</span>
+              <span className="text-primary font-medium">{opening.companyName}</span>
+            </>
+          )}
         </div>
       </div>
 

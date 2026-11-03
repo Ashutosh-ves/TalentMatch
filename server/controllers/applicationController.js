@@ -3,8 +3,9 @@ const { validationResult } = require('express-validator');
 const Application = require('../models/Application');
 const Opening = require('../models/Opening');
 const Student = require('../models/Student');
-const { calculateMatchScore } = require('../services/matchService');
+const { computeMatch } = require('../services/matchService');
 const { createAndEmit } = require('../services/notificationService');
+const { attachCompanyName } = require('../utils/attachCompanyName');
 
 const VALID_STATUSES = ['applied', 'shortlisted', 'accepted', 'rejected'];
 
@@ -60,7 +61,18 @@ const updateStatusHelper = async (req, res, next, newStatus) => {
 
     const populatedApplication = await Application.findById(application._id)
       .populate('studentId', 'name email role status')
-      .populate('openingId');
+      .populate({
+        path: 'openingId',
+        populate: {
+          path: 'recruiterId',
+          select: 'name email role status',
+        },
+      })
+      .lean();
+
+    if (populatedApplication.openingId) {
+      await attachCompanyName(populatedApplication.openingId);
+    }
 
     // Real-time notifications and updates
     const io = req.app.get('io');
@@ -166,11 +178,9 @@ const applyToOpening = async (req, res, next) => {
       });
     }
 
-    // Fetch student's profile to compute match score
-    const student = await Student.findOne({ userId: req.user._id });
-    const studentSkills = student && Array.isArray(student.skills) ? student.skills : [];
-
-    const matchScore = calculateMatchScore(studentSkills, opening.requiredSkills);
+    // Fetch student's profile to compute match score and breakdown
+    const student = await Student.findOne({ userId: req.user._id }).lean();
+    const { score: matchScore, breakdown: matchBreakdown } = computeMatch(student, opening);
 
     const application = await Application.create({
       studentId: req.user._id,
@@ -182,7 +192,19 @@ const applyToOpening = async (req, res, next) => {
 
     const populatedApp = await Application.findById(application._id)
       .populate('studentId', 'name email role status')
-      .populate('openingId');
+      .populate({
+        path: 'openingId',
+        populate: {
+          path: 'recruiterId',
+          select: 'name email role status',
+        },
+      })
+      .lean();
+
+    if (populatedApp.openingId) {
+      await attachCompanyName(populatedApp.openingId);
+    }
+    populatedApp.matchBreakdown = matchBreakdown;
 
     // Notify recruiter and emit application_updated
     const io = req.app.get('io');
@@ -230,7 +252,12 @@ const getMyApplications = async (req, res, next) => {
           select: 'name email role status',
         },
       })
-      .sort({ appliedAt: -1 });
+      .sort({ appliedAt: -1 })
+      .lean();
+
+    // Batched lookup of company names for all populated openings
+    const openings = applications.map((a) => a.openingId).filter(Boolean);
+    await attachCompanyName(openings);
 
     return res.status(200).json({
       success: true,
@@ -283,7 +310,18 @@ const getApplicationsByOpening = async (req, res, next) => {
 
     const applications = await Application.find({ openingId: opening._id })
       .populate('studentId', 'name email role status')
-      .sort({ matchScore: -1, appliedAt: -1 });
+      .populate({
+        path: 'openingId',
+        populate: {
+          path: 'recruiterId',
+          select: 'name email role status',
+        },
+      })
+      .sort({ matchScore: -1, appliedAt: -1 })
+      .lean();
+
+    const openings = applications.map((a) => a.openingId).filter(Boolean);
+    await attachCompanyName(openings);
 
     return res.status(200).json({
       success: true,
@@ -318,7 +356,14 @@ const getApplicationById = async (req, res, next) => {
 
     const application = await Application.findById(req.params.id)
       .populate('studentId', 'name email role status')
-      .populate('openingId');
+      .populate({
+        path: 'openingId',
+        populate: {
+          path: 'recruiterId',
+          select: 'name email role status',
+        },
+      })
+      .lean();
 
     if (!application) {
       return res.status(404).json({
@@ -328,8 +373,12 @@ const getApplicationById = async (req, res, next) => {
     }
 
     // Scoping check: applicant or recruiter who owns the opening
-    const isApplicant = application.studentId._id.toString() === req.user._id.toString();
-    const isOwner = application.openingId && application.openingId.recruiterId.toString() === req.user._id.toString();
+    const applicantId = application.studentId?._id || application.studentId;
+    const isApplicant = applicantId.toString() === req.user._id.toString();
+    const isOwner =
+      application.openingId &&
+      (application.openingId.recruiterId?._id || application.openingId.recruiterId).toString() ===
+        req.user._id.toString();
     const isAdmin = req.user.role === 'admin';
 
     if (!isApplicant && !isOwner && !isAdmin) {
@@ -337,6 +386,21 @@ const getApplicationById = async (req, res, next) => {
         success: false,
         message: 'Forbidden: You are not authorized to view this application',
       });
+    }
+
+    // Recompute live score and breakdown from student's current profile
+    const studentProfile = await Student.findOne({ userId: applicantId }).lean();
+    const { score: liveScore, breakdown: matchBreakdown } = computeMatch(
+      studentProfile,
+      application.openingId
+    );
+
+    application.matchScore = liveScore;
+    application.matchBreakdown = matchBreakdown;
+
+    // Attach companyName to populated opening
+    if (application.openingId) {
+      await attachCompanyName(application.openingId);
     }
 
     return res.status(200).json({
@@ -396,4 +460,3 @@ module.exports = {
   acceptApplication,
   rejectApplication,
 };
-

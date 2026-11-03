@@ -5,6 +5,7 @@ import studentService from '../../services/studentService';
 import openingService from '../../services/openingService';
 import applicationService from '../../services/applicationService';
 import { ConfirmDialog } from '../../components/common/ConfirmDialog';
+import { MatchBreakdown } from '../../components/common/MatchBreakdown';
 
 const AVAILABILITY_LABELS = {
   immediate: 'Immediate (Ready to start)',
@@ -46,7 +47,14 @@ export function CandidateProfile() {
     enabled: !!openingId,
   });
 
-  // 3. Fetch Applications for this Opening (to find this student's application)
+  // 3. Fetch Ranked Candidates for this Opening (contains live server matchBreakdown & matchScore)
+  const { data: candidatesData } = useQuery({
+    queryKey: ['openingRankedCandidates', openingId],
+    queryFn: () => openingService.getOpeningRankedCandidates(openingId),
+    enabled: !!openingId,
+  });
+
+  // 4. Fetch Applications for this Opening as secondary lookup
   const { data: applicationsData } = useQuery({
     queryKey: ['openingApplications', openingId],
     queryFn: () => applicationService.getApplicationsByOpening(openingId),
@@ -57,19 +65,69 @@ export function CandidateProfile() {
   const user = student?.userId || {};
   const opening = openingData?.opening;
 
-  // Find candidate's application if opening exists
+  // Find candidate's application across ranked candidates or application list
+  const candidates = candidatesData?.candidates || [];
   const applications = applicationsData?.applications || [];
-  const currentApplication = applications.find((app) => {
-    const appStudentId = app.studentId?._id || app.studentId;
-    return appStudentId === id || (user._id && appStudentId === user._id) || app._id === id;
+
+  const currentCandidate = candidates.find((app) => {
+    const appStudentId = (app.studentId?._id || app.studentId || '').toString();
+    const studentUserId = (user._id || '').toString();
+    const studentDocId = (student?._id || '').toString();
+    return (
+      appStudentId === id ||
+      appStudentId === studentUserId ||
+      app._id === id ||
+      studentDocId === id
+    );
   });
+
+  const currentApplication =
+    currentCandidate ||
+    applications.find((app) => {
+      const appStudentId = (app.studentId?._id || app.studentId || '').toString();
+      const studentUserId = (user._id || '').toString();
+      const studentDocId = (student?._id || '').toString();
+      return (
+        appStudentId === id ||
+        appStudentId === studentUserId ||
+        app._id === id ||
+        studentDocId === id
+      );
+    });
+
+  // 5. Fetch single application detail if application ID exists (ensures live matchBreakdown from GET /api/applications/:id)
+  const { data: appDetailData } = useQuery({
+    queryKey: ['application', currentApplication?._id],
+    queryFn: () => applicationService.getApplicationById(currentApplication._id),
+    enabled: Boolean(currentApplication?._id),
+  });
+
+  // Server matchBreakdown & matchScore (no client-side recomputation)
+  const matchBreakdown =
+    location.state?.matchBreakdown ||
+    currentCandidate?.matchBreakdown ||
+    appDetailData?.application?.matchBreakdown ||
+    currentApplication?.matchBreakdown ||
+    null;
+
+  const matchScore =
+    location.state?.matchScore !== undefined
+      ? location.state.matchScore
+      : currentCandidate?.matchScore !== undefined
+      ? currentCandidate.matchScore
+      : appDetailData?.application?.matchScore !== undefined
+      ? appDetailData.application.matchScore
+      : typeof currentApplication?.matchScore === 'number'
+      ? currentApplication.matchScore
+      : null;
 
   // Mutations for candidate application status updates
   const shortlistMutation = useMutation({
     mutationFn: (appId) => applicationService.shortlistApplication(appId),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['openingApplications', openingId] });
-      queryClient.invalidateQueries({ queryKey: ['openingCandidates', openingId] });
+      queryClient.invalidateQueries({ queryKey: ['openingRankedCandidates', openingId] });
+      queryClient.invalidateQueries({ queryKey: ['application', currentApplication?._id] });
       setFeedback({
         type: 'success',
         message: res.message || 'Candidate successfully shortlisted!',
@@ -87,7 +145,8 @@ export function CandidateProfile() {
     mutationFn: (appId) => applicationService.rejectApplication(appId),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['openingApplications', openingId] });
-      queryClient.invalidateQueries({ queryKey: ['openingCandidates', openingId] });
+      queryClient.invalidateQueries({ queryKey: ['openingRankedCandidates', openingId] });
+      queryClient.invalidateQueries({ queryKey: ['application', currentApplication?._id] });
       setFeedback({
         type: 'success',
         message: res.message || 'Candidate application marked as rejected.',
@@ -101,37 +160,6 @@ export function CandidateProfile() {
     },
   });
 
-  // Calculate Match Score and breakdown
-  const studentSkills = student?.skills || [];
-  const requiredSkills = opening?.requiredSkills || [];
-
-  const normalizedStudentSkills = new Set(
-    studentSkills.map((s) => (typeof s === 'string' ? s.toLowerCase().trim() : ''))
-  );
-
-  const matchedSkills = requiredSkills.filter((s) =>
-    normalizedStudentSkills.has(typeof s === 'string' ? s.toLowerCase().trim() : '')
-  );
-
-  const missingSkills = requiredSkills.filter(
-    (s) => !normalizedStudentSkills.has(typeof s === 'string' ? s.toLowerCase().trim() : '')
-  );
-
-  const computedMatchScore =
-    requiredSkills.length > 0
-      ? Math.round((matchedSkills.length / requiredSkills.length) * 100)
-      : 100;
-
-  // Use passed score, application score, or computed score
-  const matchScore =
-    location.state?.matchScore !== undefined
-      ? location.state.matchScore
-      : currentApplication?.matchScore !== undefined
-      ? currentApplication.matchScore
-      : opening
-      ? computedMatchScore
-      : null;
-
   const appStatus = currentApplication?.status;
   const isHighMatch = (matchScore ?? 0) >= 70;
 
@@ -141,69 +169,67 @@ export function CandidateProfile() {
       ? githubStats.topLanguages.join(', ')
       : 'None recorded';
 
+  // Company Name with graceful fallback to recruiter name
+  const companyDisplayName = opening?.companyName || opening?.recruiterId?.name || 'Company';
+
   if (isStudentLoading) {
     return (
-      <div className="py-12 space-y-8 animate-pulse">
-        <div className="h-6 bg-surface-container w-48 mb-8"></div>
-        <div className="h-24 bg-surface-container w-full mb-6"></div>
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-          <div className="md:col-span-4 h-80 bg-surface-container"></div>
-          <div className="md:col-span-8 h-80 bg-surface-container"></div>
-        </div>
+      <div className="py-20 text-center font-label-mono text-xs text-text-muted animate-pulse">
+        Loading candidate profile...
       </div>
     );
   }
 
   if (studentError || !student) {
     return (
-      <div className="py-12">
-        <div className="mb-6">
-          <Link
-            to={openingId ? `/recruiter/openings/${openingId}/candidates` : '/recruiter/dashboard'}
-            className="font-label-mono text-xs uppercase tracking-wider text-text-muted hover:text-primary transition-colors flex items-center gap-1"
-          >
-            ← Back
-          </Link>
-        </div>
-        <div className="bg-surface-container-lowest border border-border-hairline p-10 text-center">
-          <span className="material-symbols-outlined text-4xl text-text-muted mb-2">person_off</span>
-          <h2 className="font-headline-md text-xl font-bold text-primary mb-2">
-            Candidate Profile Not Found
-          </h2>
-          <p className="font-body-md text-sm text-text-muted mb-6">
-            The candidate profile you requested could not be retrieved or does not exist.
+      <div className="py-12 max-w-2xl mx-auto">
+        <div className="p-6 bg-error-container text-on-error-container border-l-4 border-error mb-6">
+          <p className="font-bold font-label-sm text-sm">Candidate Not Found</p>
+          <p className="font-body-md text-xs mt-1">
+            {studentError?.response?.data?.message ||
+              'The requested candidate profile does not exist or has been removed.'}
           </p>
-          <button
-            onClick={() => navigate(-1)}
-            className="px-6 py-2.5 bg-primary text-on-primary font-label-mono text-xs uppercase font-bold"
-          >
-            Go Back
-          </button>
         </div>
+        <Link
+          to={openingId ? `/recruiter/openings/${openingId}/candidates` : '/recruiter/dashboard'}
+          className="font-label-mono text-xs uppercase tracking-wider text-primary underline"
+        >
+          ← Return to Candidates
+        </Link>
       </div>
     );
   }
 
   return (
-    <div className="py-8 md:py-12 space-y-12">
-      {/* Back Navigation Bar */}
-      <div className="flex items-center justify-between">
-        <Link
-          to={openingId ? `/recruiter/openings/${openingId}/candidates` : '/recruiter/dashboard'}
-          className="font-label-mono text-xs uppercase tracking-wider text-text-muted hover:text-primary transition-colors flex items-center gap-1"
-        >
-          <span className="material-symbols-outlined text-sm">arrow_back</span>
-          {opening ? `Back to ${opening.title} Candidates` : 'Back to Dashboard'}
-        </Link>
+    <div className="py-6 max-w-[1200px] mx-auto flex flex-col gap-10">
+      {/* Top Navigation / Breadcrumbs */}
+      <nav aria-label="Breadcrumb">
+        <ol className="flex items-center gap-2 text-xs font-label-mono text-text-muted m-0 p-0 list-none">
+          <li>
+            <Link
+              to={openingId ? `/recruiter/openings/${openingId}/candidates` : '/recruiter/dashboard'}
+              className="hover:text-primary transition-colors flex items-center gap-1"
+            >
+              <span className="material-symbols-outlined text-sm">arrow_back</span>
+              Back to Candidates
+            </Link>
+          </li>
+          {opening && (
+            <>
+              <li>/</li>
+              <li className="text-primary font-bold">{opening.title}</li>
+              {companyDisplayName && (
+                <>
+                  <li>•</li>
+                  <li className="text-text-muted">{companyDisplayName}</li>
+                </>
+              )}
+            </>
+          )}
+        </ol>
+      </nav>
 
-        {opening && (
-          <span className="font-label-mono text-xs text-text-muted uppercase tracking-wider">
-            Role: <span className="text-primary font-bold">{opening.title}</span>
-          </span>
-        )}
-      </div>
-
-      {/* Inline Feedback Banner */}
+      {/* Feedback Banner */}
       {feedback && (
         <div
           className={`p-4 flex items-center justify-between border-l-4 ${
@@ -220,7 +246,7 @@ export function CandidateProfile() {
           </div>
           <button
             onClick={() => setFeedback(null)}
-            className="text-text-muted hover:text-primary font-bold text-sm"
+            className="text-text-muted hover:text-primary font-bold text-sm cursor-pointer"
           >
             ×
           </button>
@@ -244,19 +270,14 @@ export function CandidateProfile() {
           <p className="font-headline-md text-base md:text-lg text-text-muted">
             {student.interests && student.interests.length > 0
               ? student.interests.join(' • ')
-              : user.email}
+              : 'Software Engineering • Web Applications'}
           </p>
 
-          <div className="flex flex-wrap items-center gap-4 mt-1 font-label-mono text-xs">
-            {user.email && (
-              <a
-                href={`mailto:${user.email}`}
-                className="flex items-center gap-1 text-text-muted hover:text-primary transition-colors"
-              >
-                <span className="material-symbols-outlined text-sm">mail</span>
-                {user.email}
-              </a>
-            )}
+          <div className="flex flex-wrap items-center gap-6 font-label-mono text-xs mt-2">
+            <span className="flex items-center gap-1.5 text-text-muted">
+              <span className="material-symbols-outlined text-base">mail</span>
+              {user.email || 'No email provided'}
+            </span>
 
             {student.linkedinUrl && (
               <a
@@ -313,220 +334,181 @@ export function CandidateProfile() {
               >
                 {matchScore}%
               </div>
-              <div className="font-label-mono text-xs text-text-muted uppercase tracking-widest">
-                Match Score
-              </div>
+              <span className="font-label-mono text-xs text-text-muted uppercase tracking-widest">
+                Overall Match Score
+              </span>
             </div>
           )}
 
-          {/* Action Buttons */}
-          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-            {currentApplication ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => shortlistMutation.mutate(currentApplication._id)}
-                  disabled={appStatus === 'shortlisted' || shortlistMutation.isPending}
-                  className={`flex-1 md:flex-initial px-8 py-3.5 font-label-mono text-xs uppercase font-bold tracking-wider transition-colors cursor-pointer rounded ${
-                    appStatus === 'shortlisted'
-                      ? 'bg-match-indicator text-on-primary cursor-default'
-                      : 'bg-primary text-on-primary hover:bg-match-indicator disabled:opacity-50'
-                  }`}
-                >
-                  {shortlistMutation.isPending
-                    ? 'Updating...'
-                    : appStatus === 'shortlisted'
-                    ? 'Shortlisted'
-                    : 'Shortlist Candidate'}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsRejectConfirmOpen(true)}
-                  disabled={appStatus === 'rejected' || rejectMutation.isPending}
-                  className={`flex-1 md:flex-initial px-6 py-3.5 border font-label-mono text-xs uppercase tracking-wider transition-colors cursor-pointer rounded ${
-                    appStatus === 'rejected'
-                      ? 'border-error text-error bg-error-container/20 cursor-default'
-                      : 'border-border-hairline text-primary hover:border-error hover:text-error disabled:opacity-50'
-                  }`}
-                >
-                  {rejectMutation.isPending
-                    ? 'Updating...'
-                    : appStatus === 'rejected'
-                    ? 'Rejected'
-                    : 'Reject'}
-                </button>
-
-                {(appStatus === 'shortlisted' || appStatus === 'accepted') && (
-                  <Link
-                    to={`/chat/${currentApplication._id}`}
-                    className="flex-1 md:flex-initial px-6 py-3.5 bg-surface-container border border-border-hairline text-primary font-label-mono text-xs uppercase font-bold tracking-wider hover:bg-primary hover:text-on-primary transition-colors text-center rounded flex items-center justify-center gap-1.5"
+          {currentApplication && (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+              {appStatus === 'shortlisted' ? (
+                <div className="flex items-center gap-3">
+                  <span className="px-4 py-3 bg-secondary/10 border border-secondary text-secondary font-label-mono text-xs uppercase tracking-wider font-bold">
+                    ✓ Shortlisted
+                  </span>
+                  <button
+                    onClick={() => navigate(`/chat/${currentApplication._id}`)}
+                    className="px-6 py-3 bg-primary text-on-primary font-label-mono text-xs uppercase tracking-widest font-bold hover:bg-match-indicator transition-colors flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    <span className="material-symbols-outlined text-sm">chat</span>
+                    <span className="material-symbols-outlined text-base">chat</span>
                     Interview Chat
-                  </Link>
-                )}
-              </>
-            ) : opening ? (
-              <span className="font-label-mono text-xs text-text-muted px-4 py-3 bg-surface-container border border-border-hairline rounded">
-                Candidate has not submitted an application yet
-              </span>
-            ) : null}
-          </div>
-        </div>
-      </header>
-
-      {/* Bento Grid Layout matching stitch design */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-        {/* Bio & Availability (Col 1-4) */}
-        <div className="md:col-span-4 flex flex-col gap-6">
-          <section className="bg-surface-container-lowest border border-border-hairline p-8 rounded-lg soft-shadow transition-shadow h-full flex flex-col justify-between">
-            <div>
-              <h2 className="font-headline-md text-xl font-bold mb-6 flex items-center gap-2 border-b border-border-hairline pb-4 text-primary">
-                <span className="material-symbols-outlined">person</span> Professional Summary
-              </h2>
-
-              <p className="font-body-md text-sm text-text-muted mb-6 leading-relaxed">
-                {student.interests && student.interests.length > 0
-                  ? `Focusing on ${student.interests.join(', ')}. Demonstrated interest in building scalable, user-centric software applications.`
-                  : 'Passionate student technologist ready to deliver impactful engineering solutions.'}
-              </p>
-
-              {student.interests && student.interests.length > 0 && (
-                <div className="mb-6">
-                  <h3 className="font-label-mono text-xs text-text-muted mb-2 uppercase tracking-widest">
-                    Focus Areas
-                  </h3>
-                  <div className="flex flex-wrap gap-1.5">
-                    {student.interests.map((interest) => (
-                      <span
-                        key={interest}
-                        className="px-2.5 py-1 bg-surface-bright border border-border-hairline font-label-mono text-[11px] text-primary"
-                      >
-                        {interest}
-                      </span>
-                    ))}
-                  </div>
+                  </button>
+                </div>
+              ) : appStatus === 'accepted' ? (
+                <div className="flex items-center gap-3">
+                  <span className="px-4 py-3 bg-match-indicator/10 border border-match-indicator text-match-indicator font-label-mono text-xs uppercase tracking-wider font-bold">
+                    ✓ Accepted
+                  </span>
+                  <button
+                    onClick={() => navigate(`/chat/${currentApplication._id}`)}
+                    className="px-6 py-3 bg-primary text-on-primary font-label-mono text-xs uppercase tracking-widest font-bold hover:bg-match-indicator transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-base">chat</span>
+                    Interview Chat
+                  </button>
+                </div>
+              ) : appStatus === 'rejected' ? (
+                <span className="px-4 py-3 bg-surface-container border border-border-hairline text-text-muted font-label-mono text-xs uppercase tracking-wider">
+                  Rejected
+                </span>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => shortlistMutation.mutate(currentApplication._id)}
+                    disabled={shortlistMutation.isPending}
+                    className="px-6 py-3 bg-primary text-on-primary font-label-mono text-xs uppercase tracking-widest font-bold hover:bg-match-indicator disabled:opacity-50 transition-colors cursor-pointer"
+                  >
+                    {shortlistMutation.isPending ? 'Shortlisting...' : 'Shortlist Candidate'}
+                  </button>
+                  <button
+                    onClick={() => setIsRejectConfirmOpen(true)}
+                    disabled={rejectMutation.isPending}
+                    className="px-4 py-3 border border-border-hairline text-text-muted hover:text-error hover:border-error font-label-mono text-xs uppercase tracking-wider transition-colors cursor-pointer"
+                  >
+                    Reject
+                  </button>
                 </div>
               )}
             </div>
+          )}
+        </div>
+      </header>
 
-            <div className="bg-surface-bright p-5 rounded border border-border-hairline">
+      {/* Bento Grid: Bio / Availability & Tech Stack / GitHub */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
+        {/* Bio & Availability (Col 1-4) */}
+        <div className="md:col-span-4 flex flex-col gap-8">
+          <section className="bg-surface-container-lowest border border-border-hairline p-8 rounded-lg flex flex-col justify-between h-full">
+            <div>
+              <h2 className="font-headline-md text-lg font-bold border-b border-border-hairline pb-4 mb-4 text-primary">
+                Candidate Bio
+              </h2>
+              <p className="font-body-md text-xs md:text-sm text-text-muted leading-relaxed">
+                Focused engineering candidate active in modern web architectures and distributed
+                backends. Demonstrated history of repository maintenance and team collaboration.
+              </p>
+            </div>
+
+            <div className="bg-surface-bright p-5 rounded border border-border-hairline mt-6">
               <h3 className="font-label-mono text-xs text-text-muted mb-3 uppercase tracking-widest">
                 Availability Details
               </h3>
-              <ul className="flex flex-col gap-3 font-body-md text-xs text-primary">
+              <ul className="flex flex-col gap-3 font-body-md text-xs md:text-sm list-none p-0 m-0">
                 <li className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-sm text-match-indicator">
                     check_circle
                   </span>
                   <span>{formatAvailability(student.availability)}</span>
                 </li>
-                <li className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-sm text-match-indicator">
-                    check_circle
-                  </span>
-                  <span>Direct Communication: {user.email || 'Provided'}</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-sm text-match-indicator">
-                    check_circle
-                  </span>
-                  <span>Account Status: {user.status || 'Active'}</span>
-                </li>
+                {student.availability && (
+                  <li className="flex items-center gap-2 text-text-muted">
+                    <span className="material-symbols-outlined text-sm">schedule</span>
+                    <span>Preference: {student.availability}</span>
+                  </li>
+                )}
               </ul>
             </div>
           </section>
         </div>
 
-        {/* Tech Stack & GitHub (Col 5-12) */}
-        <div className="md:col-span-8 flex flex-col gap-6">
-          {/* Tech Stack Section */}
-          <section className="bg-surface-container-lowest border border-border-hairline p-8 rounded-lg soft-shadow transition-shadow">
-            <h2 className="font-headline-md text-xl font-bold mb-6 flex items-center gap-2 border-b border-border-hairline pb-4 text-primary">
-              <span className="material-symbols-outlined">code_blocks</span> Technical Stack
+        {/* Tech Stack & GitHub Stats (Col 5-12) */}
+        <div className="md:col-span-8 flex flex-col gap-8">
+          {/* Tech Stack */}
+          <section className="bg-surface-container-lowest border border-border-hairline p-8 rounded-lg">
+            <h2 className="font-headline-md text-lg font-bold mb-6 flex items-center gap-2 border-b border-border-hairline pb-4 text-primary">
+              <span className="material-symbols-outlined text-base">code_blocks</span>
+              Technical Stack & Skills
             </h2>
 
-            {studentSkills.length === 0 ? (
-              <p className="font-body-md text-sm text-text-muted">
-                No technical skills recorded on this profile yet.
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {studentSkills.map((skill) => {
-                  const isMatching =
-                    requiredSkills.length > 0 &&
-                    requiredSkills.some(
-                      (r) => r.toLowerCase().trim() === skill.toLowerCase().trim()
-                    );
-
-                  return (
-                    <span
-                      key={skill}
-                      className={`px-3 py-1.5 font-label-mono text-xs border rounded transition-colors ${
-                        isMatching
-                          ? 'border-match-indicator bg-match-indicator/10 text-match-indicator font-bold'
-                          : 'border-border-hairline bg-surface-bright text-primary'
-                      }`}
-                    >
-                      {skill}
-                      {isMatching && ' ✓'}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
+            <div className="flex flex-wrap gap-2">
+              {student.skills && student.skills.length > 0 ? (
+                student.skills.map((skill) => (
+                  <span
+                    key={skill}
+                    className="px-3.5 py-1.5 bg-surface-container border border-border-hairline font-label-mono text-xs text-primary"
+                  >
+                    {skill}
+                  </span>
+                ))
+              ) : (
+                <span className="text-text-muted font-body-md text-xs">
+                  No skills listed on this candidate profile.
+                </span>
+              )}
+            </div>
           </section>
 
-          {/* GitHub Stats Section (Strictly: contributions, topLanguages, repoCount only) */}
-          <section className="bg-surface-container-lowest border border-border-hairline p-8 rounded-lg soft-shadow transition-shadow flex-grow">
+          {/* GitHub Cached Stats Preview */}
+          <section className="bg-surface-container-lowest border border-border-hairline p-8 rounded-lg flex-grow">
             <div className="flex justify-between items-end border-b border-border-hairline pb-4 mb-6">
-              <h2 className="font-headline-md text-xl font-bold flex items-center gap-2 text-primary">
-                <span className="material-symbols-outlined">terminal</span> Developer Activity
-              </h2>
-
-              {student.githubUsername ? (
+              <div>
+                <span className="font-label-mono text-xs text-text-muted uppercase tracking-wider block mb-1">
+                  Verified Metrics
+                </span>
+                <h2 className="font-headline-md text-lg font-bold text-primary m-0 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-base">terminal</span>
+                  GitHub Activity
+                </h2>
+              </div>
+              {student.githubUsername && (
                 <a
                   href={`https://github.com/${student.githubUsername}`}
                   target="_blank"
                   rel="noreferrer"
                   className="font-label-mono text-xs text-match-indicator hover:underline flex items-center gap-1"
                 >
-                  View GitHub @{student.githubUsername}{' '}
+                  View GitHub
                   <span className="material-symbols-outlined text-sm">open_in_new</span>
                 </a>
-              ) : (
-                <span className="font-label-mono text-xs text-text-muted">
-                  GitHub not connected
-                </span>
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="p-5 bg-surface-bright rounded border border-border-hairline">
-                <div className="font-headline-lg text-3xl font-extrabold text-primary">
-                  {githubStats.contributions || 0}+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+              <div className="bg-surface-bright p-5 border border-border-hairline flex flex-col justify-between">
+                <span className="font-label-mono text-xs text-text-muted uppercase tracking-wider">
+                  Public Repos
+                </span>
+                <div className="font-display-xl text-3xl md:text-4xl font-extrabold text-primary mt-2">
+                  {githubStats.repoCount ?? 0}
                 </div>
-                <div className="font-label-mono text-[11px] text-text-muted uppercase tracking-widest mt-1">
+              </div>
+
+              <div className="bg-surface-bright p-5 border border-border-hairline flex flex-col justify-between">
+                <span className="font-label-mono text-xs text-text-muted uppercase tracking-wider">
                   Contributions (YTD)
+                </span>
+                <div className="font-display-xl text-3xl md:text-4xl font-extrabold text-match-indicator mt-2">
+                  {githubStats.contributions ?? 0}
                 </div>
               </div>
 
-              <div className="p-5 bg-surface-bright rounded border border-border-hairline">
-                <div className="font-headline-lg text-2xl font-bold text-primary truncate">
-                  {topLanguagesStr}
-                </div>
-                <div className="font-label-mono text-[11px] text-text-muted uppercase tracking-widest mt-1">
+              <div className="bg-surface-bright p-5 border border-border-hairline flex flex-col justify-between">
+                <span className="font-label-mono text-xs text-text-muted uppercase tracking-wider">
                   Top Languages
-                </div>
-              </div>
-
-              <div className="p-5 bg-surface-bright rounded border border-border-hairline">
-                <div className="font-headline-lg text-3xl font-extrabold text-primary">
-                  {githubStats.repoCount || 0}
-                </div>
-                <div className="font-label-mono text-[11px] text-text-muted uppercase tracking-widest mt-1">
-                  Repositories
+                </span>
+                <div className="font-body-md text-xs text-primary font-bold mt-2 truncate">
+                  {topLanguagesStr}
                 </div>
               </div>
             </div>
@@ -534,114 +516,31 @@ export function CandidateProfile() {
         </div>
       </div>
 
-      {/* Match Breakdown Section */}
+      {/* Match Breakdown Section — 3 Server Rows: Skills (60%), GitHub languages (25%), Availability (15%) */}
       <section className="bg-surface-container-lowest border border-border-hairline p-8 md:p-10 rounded-lg">
-        <h2 className="font-headline-lg text-2xl font-bold mb-8 flex items-center gap-3 text-primary">
-          <span
-            className="material-symbols-outlined text-match-indicator"
-            style={{ fontVariationSettings: "'FILL' 1" }}
-          >
-            analytics
-          </span>
-          Match Breakdown {opening && `• ${opening.title}`}
-        </h2>
+        <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-4 border-b border-border-hairline pb-4 mb-6">
+          <h2 className="font-headline-lg text-2xl font-bold flex items-center gap-3 text-primary">
+            <span
+              className="material-symbols-outlined text-match-indicator"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              analytics
+            </span>
+            Match Breakdown {opening && `• ${opening.title}`}
+          </h2>
+          {matchScore !== null && (
+            <span className="font-display-xl text-2xl font-extrabold text-match-indicator">
+              {matchScore}%
+            </span>
+          )}
+        </div>
 
         {opening ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-12">
-            {/* 1. Technical Fit */}
-            <div>
-              <div className="flex justify-between items-baseline mb-4 border-b border-border-hairline pb-2">
-                <h3 className="font-headline-md text-base font-bold text-primary">Technical Fit</h3>
-                <span className="font-label-mono text-xs text-match-indicator font-bold">
-                  {matchedSkills.length}/{requiredSkills.length} Met
-                </span>
-              </div>
-              <p className="font-body-md text-xs text-text-muted leading-relaxed mb-4">
-                {matchedSkills.length === requiredSkills.length && requiredSkills.length > 0
-                  ? 'Candidate possesses all required skills specified in the opening.'
-                  : matchedSkills.length > 0
-                  ? `Candidate demonstrates overlap with ${matchedSkills.length} out of ${requiredSkills.length} required skill requirements.`
-                  : 'Candidate has not listed the specific technical requirements for this role.'}
-              </p>
-
-              {matchedSkills.length > 0 && (
-                <div className="mb-2">
-                  <span className="font-label-mono text-[10px] text-text-muted uppercase tracking-wider block mb-1">
-                    Matching Skills:
-                  </span>
-                  <div className="flex flex-wrap gap-1">
-                    {matchedSkills.map((s) => (
-                      <span
-                        key={s}
-                        className="px-2 py-0.5 bg-green-50 text-green-700 border border-green-200 font-label-mono text-[10px] font-bold"
-                      >
-                        ✓ {s}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {missingSkills.length > 0 && (
-                <div>
-                  <span className="font-label-mono text-[10px] text-text-muted uppercase tracking-wider block mb-1">
-                    Missing Skills:
-                  </span>
-                  <div className="flex flex-wrap gap-1">
-                    {missingSkills.map((s) => (
-                      <span
-                        key={s}
-                        className="px-2 py-0.5 bg-surface-container text-text-muted border border-border-hairline font-label-mono text-[10px]"
-                      >
-                        {s}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* 2. Availability Alignment */}
-            <div>
-              <div className="flex justify-between items-baseline mb-4 border-b border-border-hairline pb-2">
-                <h3 className="font-headline-md text-base font-bold text-primary">
-                  Availability Alignment
-                </h3>
-                <span className="font-label-mono text-xs text-match-indicator font-bold">
-                  {student.availability ? 'Specified' : 'Flexible'}
-                </span>
-              </div>
-              <p className="font-body-md text-xs text-text-muted leading-relaxed mb-3">
-                Candidate reports availability as{' '}
-                <strong className="text-primary">{formatAvailability(student.availability)}</strong>.
-              </p>
-              {opening.availabilityNeeds && (
-                <div className="p-3 bg-surface-bright border border-border-hairline rounded font-label-mono text-xs text-text-muted">
-                  Role Needs:{' '}
-                  <span className="text-primary font-bold">
-                    {formatAvailability(opening.availabilityNeeds)}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* 3. Developer Engagement */}
-            <div>
-              <div className="flex justify-between items-baseline mb-4 border-b border-border-hairline pb-2">
-                <h3 className="font-headline-md text-base font-bold text-primary">
-                  Activity & Engagement
-                </h3>
-                <span className="font-label-mono text-xs text-match-indicator font-bold">
-                  {githubStats.contributions > 0 ? 'Active' : 'Unverified'}
-                </span>
-              </div>
-              <p className="font-body-md text-xs text-text-muted leading-relaxed">
-                {githubStats.contributions > 0
-                  ? `Demonstrated commit history with ${githubStats.contributions} contributions and ${githubStats.repoCount} public repositories on GitHub.`
-                  : 'No public GitHub contribution record synced yet for this candidate profile.'}
-              </p>
-            </div>
-          </div>
+          <MatchBreakdown
+            breakdown={matchBreakdown}
+            requiredSkills={opening.requiredSkills}
+            openingAvailability={opening.availabilityNeeds}
+          />
         ) : (
           <div className="text-center py-6 text-text-muted font-body-md text-sm">
             Select a job opening to evaluate this candidate against specific role requirements and
@@ -649,6 +548,7 @@ export function CandidateProfile() {
           </div>
         )}
       </section>
+
       {/* ConfirmDialog for Reject Candidate */}
       <ConfirmDialog
         isOpen={isRejectConfirmOpen}

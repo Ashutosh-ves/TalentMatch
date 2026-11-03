@@ -18,29 +18,46 @@ const Message = require('../models/Message');
 const Notification = require('../models/Notification');
 
 const { fetchGithubUserData } = require('../services/githubService');
-const { calculateMatchScore } = require('../services/matchService');
+const { computeMatch } = require('../services/matchService');
 
-// Profile overrides: customise student extraSkills and interests here
+// Profile overrides: customise student extraSkills, availability and interests here
 const PROFILE_OVERRIDES = {
+  'student.alex@talentmatch.com': {
+    skills: ['React', 'JavaScript', 'Tailwind CSS', 'HTML', 'Git'],
+    availability: 'Internship',
+    interests: ['Frontend Engineering', 'UI/UX Design', 'Web Performance'],
+    githubStats: { repoCount: 8, contributions: 25, topLanguages: ['JavaScript', 'HTML'] },
+  },
+  'student.devin@talentmatch.com': {
+    skills: ['Python', 'FastAPI', 'PostgreSQL', 'Docker'],
+    availability: 'Full-time',
+    interests: ['Backend Systems', 'Microservices', 'Distributed Data'],
+    githubStats: { repoCount: 4, contributions: 6, topLanguages: ['Python'] },
+  },
   'ashutosh.m@talentmatch.com': {
     extraSkills: ['React', 'Node.js', 'Tailwind CSS', 'Django', 'FastAPI'],
+    availability: 'Internship',
     interests: ['Full-Stack Development', 'Open Source', 'Applied AI'],
   },
   'shivam.m@talentmatch.com': {
-    extraSkills: [], // User can edit extra skills here
-    interests: ['Open Source', 'Web Development'], // User can edit interests here
+    extraSkills: [],
+    availability: 'Full-time',
+    interests: ['Open Source', 'Web Development'],
   },
   'shivam.k@talentmatch.com': {
-    extraSkills: [], // User can edit extra skills here
-    interests: ['Open Source', 'Web Development'], // User can edit interests here
+    extraSkills: [],
+    availability: 'Part-time',
+    interests: ['Open Source', 'Web Development'],
   },
   'maanas.c@talentmatch.com': {
-    extraSkills: [], // User can edit extra skills here
-    interests: ['Open Source', 'Web Development'], // User can edit interests here
+    extraSkills: [],
+    availability: 'Contract',
+    interests: ['Open Source', 'Web Development'],
   },
   'swayam.m@talentmatch.com': {
-    extraSkills: [], // User can edit extra skills here
-    interests: ['Open Source', 'Web Development'], // User can edit interests here
+    extraSkills: [],
+    availability: 'Internship',
+    interests: ['Open Source', 'Web Development'],
   },
 };
 
@@ -64,6 +81,16 @@ const DEMO_APPLICATIONS = [
   {
     studentEmail: 'maanas.c@talentmatch.com',
     openingTitle: 'Backend Developer Intern',
+    status: 'applied',
+  },
+  {
+    studentEmail: 'student.alex@talentmatch.com',
+    openingTitle: 'Frontend Developer Intern',
+    status: 'applied',
+  },
+  {
+    studentEmail: 'student.devin@talentmatch.com',
+    openingTitle: 'Frontend Developer Intern',
     status: 'applied',
   },
   // Shivam K gets no application, so he can apply live during the demo
@@ -107,84 +134,42 @@ async function seed() {
 
   try {
     // -------------------------------------------------------------
-    // 1. CLEAN UP LEGACY FAKE DATA (IDEMPOTENT)
+    // 1. CLEAN UP OBSOLETE DATA (IDEMPOTENT)
     // -------------------------------------------------------------
-    console.log('\n[1/5] Cleaning up legacy fake test data (student.alex, student.devin, old openings)...');
+    console.log('\n[1/5] Checking database state and cleaning obsolete records...');
 
-    // 1a. Clean up legacy students (Alex & Devin)
-    const legacyEmails = ['student.alex@talentmatch.com', 'student.devin@talentmatch.com'];
-    const legacyUsers = await User.find({
-      $or: [
-        { email: { $in: legacyEmails } },
-        { name: { $in: ['Alex Rivera', 'Devin Vance'] } },
-      ],
-    });
-    const legacyUserIds = legacyUsers.map((u) => u._id);
-
-    if (legacyUserIds.length > 0) {
-      const legacyApps = await Application.find({ studentId: { $in: legacyUserIds } });
-      const legacyAppIds = legacyApps.map((a) => a._id);
-
-      await Message.deleteMany({
-        $or: [
-          { applicationId: { $in: legacyAppIds } },
-          { senderId: { $in: legacyUserIds } },
-        ],
-      });
-      await Notification.deleteMany({
-        $or: [
-          { userId: { $in: legacyUserIds } },
-          { applicationId: { $in: legacyAppIds } },
-        ],
-      });
-      await Application.deleteMany({ studentId: { $in: legacyUserIds } });
-      await Student.deleteMany({ userId: { $in: legacyUserIds } });
-      await User.deleteMany({ _id: { $in: legacyUserIds } });
-      console.log(`  ✓ Removed ${legacyUserIds.length} legacy student users and all related docs.`);
-    } else {
-      console.log('  ✓ No legacy student users found to clean up.');
-    }
-
-    // Clean up any lingering notifications/messages referencing Alex Rivera or Devin Vance
-    await Notification.deleteMany({
-      message: { $regex: /Alex Rivera|Devin Vance/i },
-    });
-    await Message.deleteMany({
-      text: { $regex: /Alex Rivera|Devin Vance/i },
-    });
-
-    // 1b. Clean up legacy openings owned by approved recruiter
+    // Clean up old openings if with outdated titles
     const existingApprovedUser = await User.findOne({ email: 'recruiter.approved@talentmatch.com' });
     if (existingApprovedUser) {
-      const legacyOpenings = await Opening.find({
+      const obsoleteOpenings = await Opening.find({
         recruiterId: existingApprovedUser._id,
         title: { $in: ['Senior Frontend Engineer', 'Cloud Backend Architect'] },
       });
-      const legacyOpeningIds = legacyOpenings.map((o) => o._id);
+      const obsoleteOpeningIds = obsoleteOpenings.map((o) => o._id);
 
-      if (legacyOpeningIds.length > 0) {
-        const legacyOpeningApps = await Application.find({ openingId: { $in: legacyOpeningIds } });
-        const legacyOpeningAppIds = legacyOpeningApps.map((a) => a._id);
+      if (obsoleteOpeningIds.length > 0) {
+        const obsoleteApps = await Application.find({ openingId: { $in: obsoleteOpeningIds } });
+        const obsoleteAppIds = obsoleteApps.map((a) => a._id);
 
-        await Message.deleteMany({ applicationId: { $in: legacyOpeningAppIds } });
+        await Message.deleteMany({ applicationId: { $in: obsoleteAppIds } });
         await Notification.deleteMany({
           $or: [
-            { openingId: { $in: legacyOpeningIds } },
-            { applicationId: { $in: legacyOpeningAppIds } },
+            { openingId: { $in: obsoleteOpeningIds } },
+            { applicationId: { $in: obsoleteAppIds } },
           ],
         });
-        await Application.deleteMany({ openingId: { $in: legacyOpeningIds } });
-        await Opening.deleteMany({ _id: { $in: legacyOpeningIds } });
-        console.log(`  ✓ Removed ${legacyOpeningIds.length} legacy openings and all related docs.`);
+        await Application.deleteMany({ openingId: { $in: obsoleteOpeningIds } });
+        await Opening.deleteMany({ _id: { $in: obsoleteOpeningIds } });
+        console.log(`  ✓ Removed ${obsoleteOpeningIds.length} obsolete openings and all related docs.`);
       } else {
-        console.log('  ✓ No legacy openings found to clean up.');
+        console.log('  ✓ No obsolete openings found.');
       }
     }
 
     // -------------------------------------------------------------
     // 2. ADMIN & RECRUITERS (CLEAN REALISTIC NAMES)
     // -------------------------------------------------------------
-    console.log('\n[2/5] Upserting Admin & Recruiters with realistic names...');
+    console.log('\n[2/5] Upserting Admin & Recruiters with company names...');
 
     const admin = await upsertUser({
       name: 'System Administrator',
@@ -230,11 +215,23 @@ async function seed() {
     console.log('  ✓ Admin, Priya Nair (Nexus Tech Global), and Rohan Mehta (Apex Innovations) upserted.');
 
     // -------------------------------------------------------------
-    // 3. FIVE REAL STUDENT PROFILES + GITHUB API FETCH
+    // 3. STUDENT PROFILES WITH VARIED AVAILABILITY & SKILLS
     // -------------------------------------------------------------
-    console.log('\n[3/5] Fetching real GitHub stats and upserting 5 student profiles...');
+    console.log('\n[3/5] Upserting student profiles with diverse availability and skills...');
 
     const STUDENTS_CONFIG = [
+      {
+        name: 'Alex Rivera',
+        email: 'student.alex@talentmatch.com',
+        githubUsername: 'alex-rivera-tm',
+        isStatic: true,
+      },
+      {
+        name: 'Devin Vance',
+        email: 'student.devin@talentmatch.com',
+        githubUsername: 'devin-vance-tm',
+        isStatic: true,
+      },
       {
         name: 'Ashutosh M',
         email: 'ashutosh.m@talentmatch.com',
@@ -276,27 +273,39 @@ async function seed() {
       });
 
       const existingProfile = await Student.findOne({ userId: user._id });
-      let githubStats = existingProfile?.githubStats || { contributions: 0, topLanguages: [], repoCount: 0 };
+      const override = PROFILE_OVERRIDES[studentDef.email] || {};
+
+      let githubStats = override.githubStats || existingProfile?.githubStats || { contributions: 0, topLanguages: [], repoCount: 0 };
       let fetchSuccess = false;
 
-      try {
-        const fetchedStats = await fetchGithubUserData(studentDef.githubUsername);
-        if (fetchedStats) {
-          githubStats = fetchedStats;
-          fetchSuccess = true;
+      if (!studentDef.isStatic) {
+        try {
+          const fetchedStats = await fetchGithubUserData(studentDef.githubUsername);
+          if (fetchedStats) {
+            githubStats = fetchedStats;
+            fetchSuccess = true;
+          }
+        } catch (err) {
+          console.warn(`  ⚠️  [WARNING] Could not fetch GitHub metrics for ${studentDef.name} (@${studentDef.githubUsername}): ${err.message}`);
+          failedFetches.push({ name: studentDef.name, username: studentDef.githubUsername, error: err.message });
+          if (!existingProfile?.githubStats?.repoCount) {
+            githubStats = { contributions: 0, topLanguages: [], repoCount: 0 };
+          }
         }
-      } catch (err) {
-        console.warn(`  ⚠️  [WARNING] Could not fetch GitHub metrics for ${studentDef.name} (@${studentDef.githubUsername}): ${err.message}`);
-        failedFetches.push({ name: studentDef.name, username: studentDef.githubUsername, error: err.message });
-        if (!existingProfile?.githubStats?.repoCount) {
-          githubStats = { contributions: 0, topLanguages: [], repoCount: 0 };
-        }
+      } else {
+        fetchSuccess = true;
       }
 
-      // Compute skills: fetched topLanguages (max 5) + extraSkills from overrides
-      const override = PROFILE_OVERRIDES[studentDef.email] || { extraSkills: [], interests: [] };
-      const topLangs = Array.isArray(githubStats.topLanguages) ? githubStats.topLanguages.slice(0, 5) : [];
-      const combinedSkills = Array.from(new Set([...topLangs, ...(override.extraSkills || [])]));
+      // Compute skills & availability
+      let combinedSkills;
+      if (override.skills) {
+        combinedSkills = override.skills;
+      } else {
+        const topLangs = Array.isArray(githubStats.topLanguages) ? githubStats.topLanguages.slice(0, 5) : [];
+        combinedSkills = Array.from(new Set([...topLangs, ...(override.extraSkills || [])]));
+      }
+
+      const availability = override.availability || 'Internship';
       const interests = override.interests && override.interests.length > 0
         ? override.interests
         : ['Open Source', 'Web Development'];
@@ -307,7 +316,7 @@ async function seed() {
           userId: user._id,
           skills: combinedSkills,
           interests,
-          availability: 'Internship',
+          availability,
           githubUsername: studentDef.githubUsername,
           githubStats,
           linkedinUrl: '',
@@ -320,16 +329,18 @@ async function seed() {
 
       githubSummaryTable.push({
         'Student Name': studentDef.name,
+        Email: studentDef.email,
+        Availability: availability,
         'GitHub Username': `@${studentDef.githubUsername}`,
         'Repo Count': githubStats.repoCount ?? 0,
         'Contributions (YTD)': githubStats.contributions ?? 0,
         'Top Languages': (githubStats.topLanguages || []).join(', ') || 'None',
-        'API Fetch Status': fetchSuccess ? 'Live API Success' : (githubStats.repoCount ? 'Retained Cache' : 'Empty (Failed)'),
+        'API Fetch Status': studentDef.isStatic ? 'Seeded Baseline' : (fetchSuccess ? 'Live API Success' : (githubStats.repoCount ? 'Retained Cache' : 'Empty (Failed)')),
       });
     }
 
     // -------------------------------------------------------------
-    // 4. REALISTIC JOB OPENINGS (OWNED BY APPROVED RECRUITER)
+    // 4. REALISTIC JOB OPENINGS (OWNED BY PRIYA NAIR / NEXUS TECH)
     // -------------------------------------------------------------
     console.log('\n[4/5] Upserting realistic job openings...');
 
@@ -345,7 +356,7 @@ async function seed() {
       {
         title: 'Backend Developer Intern',
         status: 'active',
-        availabilityNeeds: 'Internship',
+        availabilityNeeds: 'Full-time',
         requiredSkills: ['Python', 'JavaScript', 'Node.js', 'Docker'],
         description:
           'Work alongside platform engineers to develop scalable REST APIs, microservices, and containerized backends using Python, Node.js, and Docker. You will contribute to database performance optimizations, automated testing pipelines, and cloud service deployments.',
@@ -394,8 +405,7 @@ async function seed() {
           continue;
         }
 
-        const studentSkills = studentInfo.studentDoc.skills || [];
-        const matchScore = calculateMatchScore(studentSkills, opening.requiredSkills);
+        const { score: matchScore, breakdown: matchBreakdown } = computeMatch(studentInfo.studentDoc, opening);
 
         const app = await Application.findOneAndUpdate(
           { studentId: studentInfo.user._id, openingId: opening._id },
@@ -551,7 +561,7 @@ async function seed() {
       console.log('\n⚠️  FAILED GITHUB FETCHES:');
       console.table(failedFetches);
     } else {
-      console.log('\n✓ All 5 GitHub profiles successfully resolved via GitHub REST API.');
+      console.log('\n✓ All GitHub profiles successfully resolved.');
     }
 
     if (isDemo && demoApplicationsReport.length > 0) {

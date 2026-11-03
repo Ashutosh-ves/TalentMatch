@@ -62,7 +62,7 @@ export function StudentDashboard() {
       if (debouncedSearchQuery.trim()) {
         const term = debouncedSearchQuery.toLowerCase();
         const titleMatch = (opening.title || '').toLowerCase().includes(term);
-        const companyMatch = (opening.recruiterId?.name || '').toLowerCase().includes(term);
+        const companyMatch = (opening.companyName || opening.recruiterId?.name || '').toLowerCase().includes(term);
         const descMatch = (opening.description || '').toLowerCase().includes(term);
         if (!titleMatch && !companyMatch && !descMatch) {
           return false;
@@ -301,7 +301,7 @@ export function StudentDashboard() {
         {!isRecsLoading && filteredRecommendations.length > 0 && (
           <div className="flex flex-col gap-6">
             {filteredRecommendations.map((opening) => {
-              const recruiterName = opening.recruiterId?.name || 'Partner Company';
+              const companyDisplayName = opening.companyName || opening.recruiterId?.name || 'Company';
               const matchScore = typeof opening.matchScore === 'number' ? opening.matchScore : 0;
               const isHighMatch = matchScore >= 70;
 
@@ -313,10 +313,19 @@ export function StudentDashboard() {
                   <div className="flex justify-between items-start gap-4">
                     <div>
                       <h3 className="font-headline-md text-xl md:text-2xl font-bold text-primary mb-1 group-hover:text-match-indicator transition-colors">
-                        <Link to={`/student/openings/${opening._id}`}>{opening.title}</Link>
+                        <Link
+                          to={`/student/openings/${opening._id}`}
+                          state={{
+                            matchScore,
+                            matchBreakdown: opening.matchBreakdown,
+                            companyName: opening.companyName,
+                          }}
+                        >
+                          {opening.title}
+                        </Link>
                       </h3>
                       <p className="font-body-md text-xs md:text-sm text-text-muted">
-                        {recruiterName} • {opening.availabilityNeeds || 'Flexible'}
+                        {companyDisplayName} • {opening.availabilityNeeds || 'Flexible'}
                       </p>
                     </div>
 
@@ -360,6 +369,11 @@ export function StudentDashboard() {
 
                     <Link
                       to={`/student/openings/${opening._id}`}
+                      state={{
+                        matchScore,
+                        matchBreakdown: opening.matchBreakdown,
+                        companyName: opening.companyName,
+                      }}
                       className="shrink-0 px-6 py-3 border border-border-hairline text-primary hover:border-primary hover:bg-black hover:text-white transition-all font-label-mono text-xs uppercase tracking-wider font-semibold"
                     >
                       View Details

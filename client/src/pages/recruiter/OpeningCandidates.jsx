@@ -189,7 +189,7 @@ export function OpeningCandidates() {
               Candidates: {opening?.title || 'Engineering Role'}
             </h1>
             <p className="font-body-md text-sm text-text-muted">
-              Ranked by Match Score against requirements.
+              {opening?.companyName ? `${opening.companyName} • ` : ''}Ranked by Match Score against requirements.
             </p>
           </div>
 
@@ -337,7 +337,11 @@ export function OpeningCandidates() {
                         <h2 className="font-headline-md text-lg md:text-xl font-bold text-primary hover:text-match-indicator transition-colors">
                           <Link
                             to={`/recruiter/candidates/${studentId}?openingId=${id}`}
-                            state={{ matchScore, openingId: id }}
+                            state={{
+                              matchScore,
+                              matchBreakdown: candidate.matchBreakdown,
+                              openingId: id,
+                            }}
                           >
                             {student.name || 'Student Candidate'}
                           </Link>

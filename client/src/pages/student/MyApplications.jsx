@@ -117,7 +117,7 @@ export function MyApplications() {
           {applications.map((app) => {
             const opening = app.openingId || {};
             const recruiter = opening.recruiterId || {};
-            const companyName = recruiter.name || 'Partner Company';
+            const companyName = opening.companyName || recruiter.name || 'Company';
             const openingId = opening._id || app.openingId;
             const canChat = app.status === 'shortlisted' || app.status === 'accepted';
 
@@ -129,7 +129,7 @@ export function MyApplications() {
                 {/* Opening & Company Info */}
                 <div className="flex items-center gap-6 md:gap-8 flex-grow">
                   <div className="w-16 h-16 shrink-0 bg-surface-container border border-border-hairline flex items-center justify-center font-display-xl font-bold text-xl text-primary uppercase">
-                    {companyName[0]}
+                    {(companyName || 'C')[0]}
                   </div>
 
                   <div>

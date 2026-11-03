@@ -4,7 +4,8 @@ const Opening = require('../models/Opening');
 const Application = require('../models/Application');
 const Student = require('../models/Student');
 const Message = require('../models/Message');
-const { rankCandidates, recommendOpeningsForStudent } = require('../services/matchService');
+const { computeMatch, rankCandidates, recommendOpeningsForStudent } = require('../services/matchService');
+const { attachCompanyName } = require('../utils/attachCompanyName');
 
 // @desc    Create a new job opening
 // @route   POST /api/openings
@@ -37,7 +38,11 @@ const createOpening = async (req, res, next) => {
       status: status || 'draft',
     });
 
-    const populatedOpening = await Opening.findById(opening._id).populate('recruiterId', 'name email role status');
+    const populatedOpening = await Opening.findById(opening._id)
+      .populate('recruiterId', 'name email role status')
+      .lean();
+
+    await attachCompanyName(populatedOpening);
 
     return res.status(201).json({
       success: true,
@@ -71,7 +76,10 @@ const getAllOpenings = async (req, res, next) => {
 
     const openings = await Opening.find(query)
       .populate('recruiterId', 'name email role status')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
+
+    await attachCompanyName(openings);
 
     return res.status(200).json({
       success: true,
@@ -90,7 +98,10 @@ const getMyOpenings = async (req, res, next) => {
   try {
     const openings = await Opening.find({ recruiterId: req.user._id })
       .populate('recruiterId', 'name email role status')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
+
+    await attachCompanyName(openings);
 
     return res.status(200).json({
       success: true,
@@ -123,7 +134,10 @@ const getOpeningById = async (req, res, next) => {
       });
     }
 
-    const opening = await Opening.findById(req.params.id).populate('recruiterId', 'name email role status');
+    const opening = await Opening.findById(req.params.id)
+      .populate('recruiterId', 'name email role status')
+      .lean();
+
     if (!opening) {
       return res.status(404).json({
         success: false,
@@ -145,6 +159,8 @@ const getOpeningById = async (req, res, next) => {
         });
       }
     }
+
+    await attachCompanyName(opening);
 
     return res.status(200).json({
       success: true,
@@ -208,7 +224,11 @@ const updateOpening = async (req, res, next) => {
 
     await opening.save();
 
-    const populatedOpening = await Opening.findById(opening._id).populate('recruiterId', 'name email role status');
+    const populatedOpening = await Opening.findById(opening._id)
+      .populate('recruiterId', 'name email role status')
+      .lean();
+
+    await attachCompanyName(populatedOpening);
 
     return res.status(200).json({
       success: true,
@@ -279,7 +299,7 @@ const deleteOpening = async (req, res, next) => {
   }
 };
 
-// @desc    Get candidates for an opening ranked by matchScore
+// @desc    Get candidates for an opening ranked by live matchScore
 // @route   GET /api/openings/:id/candidates OR GET /api/openings/:id/ranked-candidates
 // @access  Private (Approved Recruiter - Owner)
 const getOpeningRankedCandidates = async (req, res, next) => {
@@ -300,7 +320,7 @@ const getOpeningRankedCandidates = async (req, res, next) => {
       });
     }
 
-    const opening = await Opening.findById(req.params.id);
+    const opening = await Opening.findById(req.params.id).lean();
     if (!opening) {
       return res.status(404).json({
         success: false,
@@ -320,12 +340,38 @@ const getOpeningRankedCandidates = async (req, res, next) => {
       .populate('studentId', 'name email role status')
       .lean();
 
-    const ranked = rankCandidates(applications);
+    // Batched lookup of student profiles to avoid N+1 queries
+    const studentUserIds = applications
+      .map((app) => app.studentId?._id || app.studentId)
+      .filter(Boolean);
+
+    const studentProfiles = await Student.find({ userId: { $in: studentUserIds } }).lean();
+    const profileMap = new Map();
+    studentProfiles.forEach((p) => profileMap.set(p.userId.toString(), p));
+
+    // Recompute live match score, breakdown, and studentProfile summary
+    for (const app of applications) {
+      const studentUserId = (app.studentId?._id || app.studentId || '').toString();
+      const profile = profileMap.get(studentUserId) || null;
+      const { score, breakdown } = computeMatch(profile, opening);
+
+      app.matchScore = score;
+      app.matchBreakdown = breakdown;
+      app.studentProfile = {
+        skills: profile?.skills || [],
+        availability: profile?.availability || '',
+        githubStats: profile?.githubStats || { repoCount: 0, contributions: 0, topLanguages: [] },
+      };
+      app.studentSkills = profile?.skills || [];
+    }
+
+    // Rank candidates by live score descending
+    applications.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
 
     return res.status(200).json({
       success: true,
-      count: ranked.length,
-      candidates: ranked,
+      count: applications.length,
+      candidates: applications,
     });
   } catch (error) {
     next(error);
@@ -337,14 +383,14 @@ const getOpeningRankedCandidates = async (req, res, next) => {
 // @access  Private (Student)
 const getRecommendedOpenings = async (req, res, next) => {
   try {
-    const student = await Student.findOne({ userId: req.user._id });
-    const studentSkills = student ? student.skills : [];
+    const student = await Student.findOne({ userId: req.user._id }).lean();
 
     const activeOpenings = await Opening.find({ status: 'active' })
       .populate('recruiterId', 'name email role status')
       .lean();
 
-    const recommendations = recommendOpeningsForStudent(studentSkills, activeOpenings);
+    const recommendations = recommendOpeningsForStudent(student, activeOpenings);
+    await attachCompanyName(recommendations);
 
     return res.status(200).json({
       success: true,
@@ -366,4 +412,3 @@ module.exports = {
   getOpeningRankedCandidates,
   getRecommendedOpenings,
 };
-
