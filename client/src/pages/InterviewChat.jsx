@@ -21,12 +21,14 @@ export function InterviewChat() {
   const debouncedSearchFilter = useDebounce(searchFilter, 300);
   const [isOtherUserTyping, setIsOtherUserTyping] = useState(false);
   const [otherUserTypingName, setOtherUserTypingName] = useState('');
+  const [onlineUsers, setOnlineUsers] = useState(new Set());
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [incomingMessages, setIncomingMessages] = useState([]);
 
   const messagesEndRef = useRef(null);
-  const typingTimeoutRef = useRef(null);
-  const broadcastChannelRef = useRef(null);
+  const lastTypingEmitRef = useRef(0);
+  const idleStopTypingTimeoutRef = useRef(null);
+  const isCurrentlyTypingRef = useRef(false);
 
   // 1. Fetch conversations list for sidebar
   const { data: myAppsData } = useQuery({
@@ -107,67 +109,6 @@ export function InterviewChat() {
     return list;
   }, [role, myAppsData, recruiterAppsData, currentApplication]);
 
-  // Setup Cross-Window / Tab Typing Listeners (BroadcastChannel + LocalStorage event)
-  useEffect(() => {
-    if (!activeAppId) return;
-
-    const handleTypingEvent = (senderId, senderName, isTyping) => {
-      if (senderId && senderId !== currentUserId) {
-        setIsOtherUserTyping(isTyping);
-        if (isTyping) {
-          setOtherUserTypingName(senderName || 'Candidate');
-        }
-      }
-    };
-
-    // 1. BroadcastChannel
-    let channel = null;
-    try {
-      channel = new BroadcastChannel(`tm_typing_${activeAppId}`);
-      broadcastChannelRef.current = channel;
-
-      channel.onmessage = (event) => {
-        const { senderId, senderName, isTyping } = event.data || {};
-        handleTypingEvent(senderId, senderName, isTyping);
-      };
-    } catch {
-      // BroadcastChannel fallback if not supported
-    }
-
-    // 2. Storage event fallback for cross-window syncing
-    const handleStorage = (event) => {
-      if (event.key === `tm_typing_${activeAppId}` && event.newValue) {
-        try {
-          const { senderId, senderName, isTyping } = JSON.parse(event.newValue);
-          handleTypingEvent(senderId, senderName, isTyping);
-        } catch {}
-      }
-    };
-    window.addEventListener('storage', handleStorage);
-
-    // 3. Short interval check to guarantee cross-window / tab detection in all environments
-    const interval = setInterval(() => {
-      try {
-        const stored = localStorage.getItem(`tm_typing_${activeAppId}`);
-        if (stored) {
-          const { senderId, senderName, isTyping, time } = JSON.parse(stored);
-          if (isTyping && Date.now() - time < 3000) {
-            handleTypingEvent(senderId, senderName, true);
-          } else if (!isTyping || Date.now() - time >= 3000) {
-            handleTypingEvent(senderId, senderName, false);
-          }
-        }
-      } catch {}
-    }, 250);
-
-    return () => {
-      if (channel) channel.close();
-      broadcastChannelRef.current = null;
-      window.removeEventListener('storage', handleStorage);
-      clearInterval(interval);
-    };
-  }, [activeAppId, currentUserId]);
-
   // 4. Fetch message history for the active application
   const { data: messagesData, isLoading: isMessagesLoading } = useQuery({
     queryKey: ['messages', activeAppId],
@@ -190,12 +131,41 @@ export function InterviewChat() {
     );
   }, [messagesData, incomingMessages, activeAppId]);
 
-  // 5. Socket.IO Room Management & Real-time Event Wiring
+  // 5. Socket.IO Room Management, Real-time Messages, Typing, & Presence Wiring
   useEffect(() => {
+    setIsOtherUserTyping(false);
+    setOtherUserTypingName('');
+    setOnlineUsers(new Set());
+
     if (!socket || !isConnected || !activeAppId) return;
 
-    // Join room
+    // Join application chat room
     socket.emit('join_room', { applicationId: activeAppId });
+
+    // Listener for room entry response (contains currently online user IDs)
+    const handleJoinedRoom = (data) => {
+      if (data?.applicationId === activeAppId && Array.isArray(data.onlineUserIds)) {
+        setOnlineUsers(new Set(data.onlineUserIds.map(String)));
+      }
+    };
+
+    // Presence: user joined the room
+    const handleUserOnline = (data) => {
+      if (data?.applicationId === activeAppId && data?.userId) {
+        setOnlineUsers((prev) => new Set([...prev, String(data.userId)]));
+      }
+    };
+
+    // Presence: user left or disconnected from the room
+    const handleUserOffline = (data) => {
+      if (data?.applicationId === activeAppId && data?.userId) {
+        setOnlineUsers((prev) => {
+          const next = new Set(prev);
+          next.delete(String(data.userId));
+          return next;
+        });
+      }
+    };
 
     // Listener for new messages
     const handleReceiveMessage = (newMessage) => {
@@ -208,101 +178,134 @@ export function InterviewChat() {
       }
     };
 
-    // Listeners for typing indicators
+    // Listeners for typing indicators from the server relay
     const handleTyping = (data) => {
-      if (data?.applicationId === activeAppId && data?.senderId !== currentUserId) {
+      if (data?.applicationId === activeAppId && String(data?.userId) !== String(currentUserId)) {
         setIsOtherUserTyping(true);
-        setOtherUserTypingName(data?.senderName || 'Candidate');
+        setOtherUserTypingName(data?.name || '');
       }
     };
 
     const handleStopTyping = (data) => {
-      if (data?.applicationId === activeAppId && data?.senderId !== currentUserId) {
+      if (data?.applicationId === activeAppId && String(data?.userId) !== String(currentUserId)) {
         setIsOtherUserTyping(false);
       }
     };
 
+    socket.on('joined_room', handleJoinedRoom);
+    socket.on('user_online', handleUserOnline);
+    socket.on('user_offline', handleUserOffline);
     socket.on('receive_message', handleReceiveMessage);
     socket.on('typing', handleTyping);
     socket.on('stop_typing', handleStopTyping);
 
-    return () => {
+    const handleBeforeUnload = () => {
       socket.emit('leave_room', { applicationId: activeAppId });
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handleBeforeUnload);
+      socket.emit('leave_room', { applicationId: activeAppId });
+      socket.off('joined_room', handleJoinedRoom);
+      socket.off('user_online', handleUserOnline);
+      socket.off('user_offline', handleUserOffline);
       socket.off('receive_message', handleReceiveMessage);
       socket.off('typing', handleTyping);
       socket.off('stop_typing', handleStopTyping);
     };
   }, [socket, isConnected, activeAppId, currentUserId]);
 
+  // Clean up idle typing timeout and stop typing on unmount or activeAppId change
+  useEffect(() => {
+    return () => {
+      if (idleStopTypingTimeoutRef.current) {
+        clearTimeout(idleStopTypingTimeoutRef.current);
+      }
+      if (isCurrentlyTypingRef.current && socket && isConnected && activeAppId) {
+        socket.emit('stop_typing', { applicationId: activeAppId });
+        isCurrentlyTypingRef.current = false;
+        lastTypingEmitRef.current = 0;
+      }
+    };
+  }, [activeAppId, socket, isConnected]);
+
   // Auto-scroll messages to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [liveMessages, isOtherUserTyping]);
 
-  // Typing emitter helper
-  const emitTyping = (isTyping) => {
-    if (!activeAppId) return;
-
-    if (broadcastChannelRef.current) {
-      try {
-        broadcastChannelRef.current.postMessage({
-          senderId: currentUserId,
-          senderName: user?.name,
-          isTyping,
-        });
-      } catch {
-        // BroadcastChannel send error ignored
-      }
-    }
-
-    try {
-      localStorage.setItem(
-        `tm_typing_${activeAppId}`,
-        JSON.stringify({
-          senderId: currentUserId,
-          senderName: user?.name,
-          isTyping,
-          time: Date.now(),
-        })
-      );
-    } catch {
-      // LocalStorage error ignored
-    }
-
-    if (socket && isConnected) {
-      socket.emit(isTyping ? 'typing' : 'stop_typing', {
-        applicationId: activeAppId,
-        senderId: currentUserId,
-        senderName: user?.name,
-      });
-    }
-  };
-
+  // Handle typing emissions: throttled to once per 2s, stop_typing after 2.5s idle
   const handleInputChange = (e) => {
     const val = e.target.value;
     setInputMessage(val);
 
+    if (!socket || !isConnected || !activeAppId) return;
+
     if (val.trim()) {
-      emitTyping(true);
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      typingTimeoutRef.current = setTimeout(() => {
-        emitTyping(false);
-      }, 1500);
+      const now = Date.now();
+      // Throttle typing to once per 2s
+      if (now - lastTypingEmitRef.current >= 2000) {
+        socket.emit('typing', { applicationId: activeAppId });
+        lastTypingEmitRef.current = now;
+        isCurrentlyTypingRef.current = true;
+      }
+
+      // Stop typing after 2.5s idle
+      if (idleStopTypingTimeoutRef.current) {
+        clearTimeout(idleStopTypingTimeoutRef.current);
+      }
+      idleStopTypingTimeoutRef.current = setTimeout(() => {
+        if (isCurrentlyTypingRef.current) {
+          socket.emit('stop_typing', { applicationId: activeAppId });
+          isCurrentlyTypingRef.current = false;
+          lastTypingEmitRef.current = 0;
+        }
+      }, 2500);
     } else {
-      emitTyping(false);
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (idleStopTypingTimeoutRef.current) {
+        clearTimeout(idleStopTypingTimeoutRef.current);
+      }
+      if (isCurrentlyTypingRef.current) {
+        socket.emit('stop_typing', { applicationId: activeAppId });
+        isCurrentlyTypingRef.current = false;
+        lastTypingEmitRef.current = 0;
+      }
     }
   };
 
-  // 6. Send message action
+  // Handle input blur: stop typing immediately
+  const handleInputBlur = () => {
+    if (idleStopTypingTimeoutRef.current) {
+      clearTimeout(idleStopTypingTimeoutRef.current);
+    }
+    if (isCurrentlyTypingRef.current && socket && isConnected && activeAppId) {
+      socket.emit('stop_typing', { applicationId: activeAppId });
+      isCurrentlyTypingRef.current = false;
+      lastTypingEmitRef.current = 0;
+    }
+  };
+
+  // 6. Send message action: stop typing immediately on send
   const handleSendMessage = async (e) => {
     if (e) e.preventDefault();
     const trimmed = inputMessage.trim();
     if (!trimmed || !activeAppId) return;
 
     setInputMessage('');
-    emitTyping(false);
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
+    // Stop typing immediately on send
+    if (idleStopTypingTimeoutRef.current) {
+      clearTimeout(idleStopTypingTimeoutRef.current);
+    }
+    if (isCurrentlyTypingRef.current && socket && isConnected && activeAppId) {
+      socket.emit('stop_typing', { applicationId: activeAppId });
+      isCurrentlyTypingRef.current = false;
+      lastTypingEmitRef.current = 0;
+    }
 
     // Try sending via Socket first
     if (socket && isConnected) {
@@ -337,6 +340,13 @@ export function InterviewChat() {
   // Determine chat partner identity
   const opening = currentApplication?.openingId || {};
   const studentUser = currentApplication?.studentId || {};
+
+  const partnerUserId =
+    role === 'student'
+      ? (opening.recruiterId?._id || opening.recruiterId?.id || opening.recruiterId)?.toString()
+      : (studentUser._id || studentUser.id || studentUser)?.toString();
+
+  const isPartnerOnline = Boolean(partnerUserId && onlineUsers.has(String(partnerUserId)));
 
   const partnerName =
     role === 'student'
@@ -478,9 +488,9 @@ export function InterviewChat() {
           </div>
         </aside>
 
-        {/* Right Side: Active Chat View matching stitch design */}
-        <section className="flex-grow flex flex-col h-full bg-surface-container-lowest border border-border-hairline relative overflow-hidden">
-          {activeAppId && currentApplication ? (
+        {/* Right Main Chat Thread Area matching stitch design */}
+        <section className="flex-grow flex flex-col h-full bg-surface border border-border-hairline overflow-hidden relative">
+          {activeAppId ? (
             <>
               {/* Chat Header */}
               <div className="flex items-center justify-between p-4 md:p-6 border-b border-border-hairline bg-surface-container-lowest flex-none">
@@ -491,9 +501,9 @@ export function InterviewChat() {
                     </div>
                     <div
                       className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-surface-container-lowest ${
-                        isConnected ? 'bg-green-500' : 'bg-orange-400'
+                        isPartnerOnline ? 'bg-green-500' : 'bg-gray-400'
                       }`}
-                      title={isConnected ? 'Online' : 'Reconnecting...'}
+                      title={isPartnerOnline ? 'Online' : 'Offline'}
                     ></div>
                   </div>
 
@@ -502,8 +512,14 @@ export function InterviewChat() {
                       <h2 className="font-headline-md text-lg md:text-xl font-bold text-primary tracking-tight">
                         {partnerName}
                       </h2>
-                      <span className="font-label-mono text-[10px] bg-surface-container-low px-2 py-0.5 rounded text-text-muted uppercase">
-                        {isConnected ? 'ONLINE' : 'CONNECTING'}
+                      <span
+                        className={`font-label-mono text-[10px] px-2 py-0.5 rounded font-semibold uppercase ${
+                          isPartnerOnline
+                            ? 'bg-green-500/10 text-green-600 border border-green-500/20'
+                            : 'bg-surface-container-low text-text-muted border border-border-hairline'
+                        }`}
+                      >
+                        {isPartnerOnline ? 'ONLINE' : 'OFFLINE'}
                       </span>
                     </div>
 
@@ -524,79 +540,73 @@ export function InterviewChat() {
                           to={`/student/openings/${opening._id}`}
                           className="font-label-mono text-xs text-primary hover:text-match-indicator underline transition-colors"
                         >
-                          View Role
+                          View Opening
                         </Link>
                       ) : null}
                     </div>
                   </div>
                 </div>
 
-                {/* Match Score Display */}
-                <div className="text-right flex flex-col items-end">
-                  <span className="font-display-xl text-match-indicator font-extrabold text-2xl md:text-3xl leading-none tracking-tighter">
-                    {matchScore}%
+                {/* Match indicator pill */}
+                <div className="hidden sm:flex flex-col items-end">
+                  <span className="font-label-mono text-[10px] text-text-muted uppercase tracking-wider">
+                    Match Confidence
                   </span>
-                  <span className="font-label-mono text-[10px] text-text-muted uppercase tracking-widest mt-1">
-                    Match Score
+                  <span className="font-display-xl text-lg font-bold text-match-indicator">
+                    {matchScore}%
                   </span>
                 </div>
               </div>
 
-              {/* Messages Area matching stitch design */}
-              <div className="flex-grow overflow-y-auto p-4 md:p-6 flex flex-col gap-6 bg-surface">
-                {/* Date Divider */}
-                <div className="flex items-center justify-center relative my-2">
-                  <hr className="w-full border-border-hairline absolute top-1/2 -z-0" />
-                  <span className="bg-surface px-4 font-label-mono text-xs text-text-muted uppercase tracking-widest z-10">
-                    Interview Conversation
-                  </span>
-                </div>
-
+              {/* Chat Message Scrollable Container */}
+              <div className="flex-grow p-4 md:p-6 overflow-y-auto space-y-4">
                 {isMessagesLoading ? (
-                  <div className="flex flex-col gap-4 py-8 animate-pulse">
-                    <div className="h-12 bg-surface-container w-2/3 self-start rounded-xl"></div>
-                    <div className="h-12 bg-surface-container w-2/3 self-end rounded-xl"></div>
+                  <div className="h-full flex items-center justify-center font-label-mono text-xs text-text-muted">
+                    Loading interview thread...
                   </div>
                 ) : liveMessages.length === 0 ? (
-                  <div className="py-16 text-center text-text-muted font-body-md text-sm">
+                  <div className="h-full flex flex-col items-center justify-center text-center p-8 text-text-muted">
                     <span className="material-symbols-outlined text-4xl mb-2 text-text-muted">
                       chat_bubble_outline
                     </span>
-                    <p className="font-semibold text-primary">No messages yet.</p>
-                    <p className="text-xs text-text-muted mt-1">
-                      Start the interview conversation below. Messages are delivered in real time.
+                    <p className="font-body-md text-sm">No messages exchanged yet.</p>
+                    <p className="font-label-mono text-xs mt-1 text-text-muted">
+                      Send a message below to start the conversation.
                     </p>
                   </div>
                 ) : (
                   liveMessages.map((msg) => {
-                    const sender = msg.senderId || {};
-                    const senderId = sender._id || sender.id || sender;
-                    const isMe = senderId === currentUserId || senderId === user?._id || senderId === user?.id;
+                    const isOwn =
+                      msg.senderId?._id === currentUserId ||
+                      msg.senderId?.id === currentUserId ||
+                      msg.senderId === currentUserId;
 
-                    return isMe ? (
-                      /* Sent Message Block (Right-aligned, bg-primary) */
-                      <div
-                        key={msg._id}
-                        className="flex flex-col gap-1 items-end self-end max-w-[85%] md:max-w-[75%]"
-                      >
-                        <div className="bg-primary text-on-primary p-4 rounded-tl-xl rounded-bl-xl rounded-tr-xl font-body-md text-sm leading-relaxed shadow-sm">
-                          {msg.text}
-                        </div>
-                        <span className="font-label-mono text-[11px] text-text-muted mr-1 flex items-center gap-1">
-                          {formatMessageTime(msg.timestamp)}
-                          <span className="material-symbols-outlined text-[14px] text-text-muted">
-                            done_all
+                    if (isOwn) {
+                      return (
+                        <div
+                          key={msg._id || msg.timestamp}
+                          className="flex flex-col items-end gap-1 max-w-[80%] md:max-w-[70%] ml-auto"
+                        >
+                          <span className="font-label-mono text-[10px] text-text-muted mr-1">
+                            You
                           </span>
-                        </span>
-                      </div>
-                    ) : (
-                      /* Received Message Block (Left-aligned, bg-surface-container-low) */
+                          <div className="bg-primary text-on-primary p-4 rounded-tl-xl rounded-tr-xl rounded-bl-xl font-body-md text-sm leading-relaxed shadow-sm">
+                            {msg.text}
+                          </div>
+                          <span className="font-label-mono text-[11px] text-text-muted mr-1">
+                            {formatMessageTime(msg.timestamp)}
+                          </span>
+                        </div>
+                      );
+                    }
+
+                    return (
                       <div
-                        key={msg._id}
-                        className="flex flex-col gap-1 items-start max-w-[85%] md:max-w-[75%]"
+                        key={msg._id || msg.timestamp}
+                        className="flex flex-col items-start gap-1 max-w-[80%] md:max-w-[70%]"
                       >
-                        <span className="font-label-mono text-[10px] text-text-muted ml-1 font-bold">
-                          {sender.name || partnerName}
+                        <span className="font-label-mono text-[10px] text-text-muted ml-1">
+                          {msg.senderId?.name || partnerName}
                         </span>
                         <div className="bg-surface-container-low text-primary p-4 border border-border-hairline rounded-tr-xl rounded-br-xl rounded-tl-xl font-body-md text-sm leading-relaxed shadow-sm">
                           {msg.text}
@@ -646,7 +656,7 @@ export function InterviewChat() {
                       type="text"
                       value={inputMessage}
                       onChange={handleInputChange}
-                      onInput={handleInputChange}
+                      onBlur={handleInputBlur}
                       onKeyDown={handleKeyDown}
                       placeholder="Type an interview message (Press Enter to send)..."
                       className="w-full border-0 border-b-2 border-border-hairline focus:border-primary bg-transparent py-3 px-0 font-body-md text-sm text-primary placeholder:font-label-mono placeholder:text-text-muted outline-none transition-colors rounded-none"

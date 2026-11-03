@@ -1,9 +1,9 @@
 # Talent Match — Frontend Client
 
-The frontend client for Talent Match, an AI-informed engineering recruitment and candidate alignment platform connecting university students with recruiters.
+The frontend client for Talent Match, an engineering recruitment and candidate alignment platform connecting university students with recruiters.
 
 ## Tech Stack
-- **Framework**: React 19 + Vite 6
+- **Framework**: React 19 + Vite 8
 - **Routing**: React Router v7
 - **Data Fetching & Cache**: TanStack React Query v5
 - **Styling**: Tailwind CSS v4

@@ -85,6 +85,13 @@ const sendMessage = async (req, res, next) => {
 
   const { applicationId, text } = req.body;
 
+  if (text && text.trim().length > 2000) {
+    return res.status(400).json({
+      success: false,
+      message: 'Message text cannot exceed 2000 characters',
+    });
+  }
+
   try {
     if (!mongoose.Types.ObjectId.isValid(applicationId)) {
       return res.status(400).json({

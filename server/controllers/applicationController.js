@@ -4,6 +4,7 @@ const Application = require('../models/Application');
 const Opening = require('../models/Opening');
 const Student = require('../models/Student');
 const { calculateMatchScore } = require('../services/matchService');
+const { createAndEmit } = require('../services/notificationService');
 
 const VALID_STATUSES = ['applied', 'shortlisted', 'accepted', 'rejected'];
 
@@ -51,12 +52,59 @@ const updateStatusHelper = async (req, res, next, newStatus) => {
       });
     }
 
+    const oldStatus = application.status;
+    const isStatusChanged = oldStatus !== newStatus;
+
     application.status = newStatus;
     await application.save();
 
     const populatedApplication = await Application.findById(application._id)
       .populate('studentId', 'name email role status')
       .populate('openingId');
+
+    // Real-time notifications and updates
+    const io = req.app.get('io');
+    const studentUserId = application.studentId?._id || application.studentId;
+    const recruiterUserId = application.openingId?.recruiterId?._id || application.openingId?.recruiterId;
+    const openingTitle = application.openingId?.title || 'an opening';
+
+    if (isStatusChanged) {
+      // 1. Notify student (shortlisted/accepted/rejected only, skip if unchanged)
+      if (['shortlisted', 'accepted', 'rejected'].includes(newStatus)) {
+        let notifType;
+        let notifMessage;
+
+        if (newStatus === 'shortlisted') {
+          notifType = 'application_shortlisted';
+          notifMessage = `Your application for "${openingTitle}" has been shortlisted!`;
+        } else if (newStatus === 'accepted') {
+          notifType = 'application_accepted';
+          notifMessage = `Congratulations! Your application for "${openingTitle}" has been accepted!`;
+        } else if (newStatus === 'rejected') {
+          notifType = 'application_rejected';
+          notifMessage = `Your application for "${openingTitle}" was not selected.`;
+        }
+
+        await createAndEmit(io, {
+          userId: studentUserId,
+          type: notifType,
+          message: notifMessage,
+          applicationId: application._id,
+          openingId: application.openingId?._id || application.openingId,
+        });
+      }
+
+      // 2. Emit 'application_updated' to student's and recruiter's user rooms
+      if (io) {
+        const updatePayload = {
+          applicationId: application._id,
+          openingId: application.openingId?._id || application.openingId,
+          status: newStatus,
+        };
+        io.to(`user_${studentUserId}`).emit('application_updated', updatePayload);
+        io.to(`user_${recruiterUserId}`).emit('application_updated', updatePayload);
+      }
+    }
 
     return res.status(200).json({
       success: true,
@@ -135,6 +183,29 @@ const applyToOpening = async (req, res, next) => {
     const populatedApp = await Application.findById(application._id)
       .populate('studentId', 'name email role status')
       .populate('openingId');
+
+    // Notify recruiter and emit application_updated
+    const io = req.app.get('io');
+    const studentName = req.user.name || 'A candidate';
+    const notifMessage = `${studentName} applied to ${opening.title}`;
+
+    await createAndEmit(io, {
+      userId: opening.recruiterId,
+      type: 'application_received',
+      message: notifMessage,
+      applicationId: application._id,
+      openingId: opening._id,
+    });
+
+    if (io) {
+      const updatePayload = {
+        applicationId: application._id,
+        openingId: opening._id,
+        status: 'applied',
+      };
+      io.to(`user_${req.user._id}`).emit('application_updated', updatePayload);
+      io.to(`user_${opening.recruiterId}`).emit('application_updated', updatePayload);
+    }
 
     return res.status(201).json({
       success: true,

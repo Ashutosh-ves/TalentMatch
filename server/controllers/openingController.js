@@ -3,6 +3,7 @@ const { validationResult } = require('express-validator');
 const Opening = require('../models/Opening');
 const Application = require('../models/Application');
 const Student = require('../models/Student');
+const Message = require('../models/Message');
 const { rankCandidates, recommendOpeningsForStudent } = require('../services/matchService');
 
 // @desc    Create a new job opening
@@ -254,6 +255,15 @@ const deleteOpening = async (req, res, next) => {
         success: false,
         message: 'Forbidden: You can only delete your own openings',
       });
+    }
+
+    // Find associated applications
+    const applications = await Application.find({ openingId: opening._id }).select('_id');
+    const applicationIds = applications.map((app) => app._id);
+
+    // Delete messages of the associated applications
+    if (applicationIds.length > 0) {
+      await Message.deleteMany({ applicationId: { $in: applicationIds } });
     }
 
     // Delete associated applications

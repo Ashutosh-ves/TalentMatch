@@ -13,6 +13,11 @@ export function ConfirmDialog({
 }) {
   const dialogRef = useRef(null);
   const previouslyFocusedElementRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
     if (!isOpen) return;
@@ -32,7 +37,7 @@ export function ConfirmDialog({
       // Esc key closes modal
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        onCloseRef.current?.();
         return;
       }
 
@@ -78,13 +83,13 @@ export function ConfirmDialog({
         previouslyFocusedElementRef.current.focus();
       }
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   const handleBackdropClick = (e) => {
     if (e.target === e.currentTarget) {
-      onClose();
+      onCloseRef.current?.();
     }
   };
 

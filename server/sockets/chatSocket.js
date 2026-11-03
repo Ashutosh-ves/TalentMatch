@@ -4,8 +4,43 @@ const User = require('../models/User');
 const Application = require('../models/Application');
 const Message = require('../models/Message');
 
+// In-memory room presence tracker: roomName -> Map<userId, socketCount>
+const roomPresence = new Map();
+
+function addUserToRoom(roomName, userId) {
+  if (!roomPresence.has(roomName)) {
+    roomPresence.set(roomName, new Map());
+  }
+  const userMap = roomPresence.get(roomName);
+  const currentCount = userMap.get(userId) || 0;
+  userMap.set(userId, currentCount + 1);
+  return currentCount === 0; // True if this was user's first socket entering room
+}
+
+function removeUserFromRoom(roomName, userId) {
+  if (!roomPresence.has(roomName)) return false;
+  const userMap = roomPresence.get(roomName);
+  const currentCount = userMap.get(userId) || 0;
+  if (currentCount <= 1) {
+    userMap.delete(userId);
+    if (userMap.size === 0) {
+      roomPresence.delete(roomName);
+    }
+    return true; // True if user is now completely offline in this room
+  } else {
+    userMap.set(userId, currentCount - 1);
+    return false;
+  }
+}
+
+function getOnlineUsersInRoom(roomName) {
+  if (!roomPresence.has(roomName)) return [];
+  return Array.from(roomPresence.get(roomName).keys());
+}
+
 /**
- * Initializes Socket.IO event handlers and authentication middleware for real-time messaging.
+ * Initializes Socket.IO event handlers and authentication middleware for real-time messaging,
+ * presence tracking, notifications, and typing indicators.
  * @param {import('socket.io').Server} io
  */
 const initChatSocket = (io) => {
@@ -39,6 +74,12 @@ const initChatSocket = (io) => {
   });
 
   io.on('connection', (socket) => {
+    const userId = socket.user._id.toString();
+
+    // Auto-join personal user room for direct notifications and status updates
+    socket.join(`user_${userId}`);
+    console.log(`Socket connected: ${socket.user.name} (${userId})`);
+
     // Join chat room tied to an applicationId
     socket.on('join_room', async (data, callback) => {
       try {
@@ -87,11 +128,20 @@ const initChatSocket = (io) => {
         const roomName = `application_${applicationId}`;
         socket.join(roomName);
 
+        // Presence tracking: add user to room and notify other participants
+        const isNewlyOnline = addUserToRoom(roomName, userId);
+        if (isNewlyOnline) {
+          socket.to(roomName).emit('user_online', { applicationId, userId });
+        }
+
+        const onlineUserIds = getOnlineUsersInRoom(roomName);
+
         const successPayload = {
           success: true,
           applicationId,
           room: roomName,
           user: { id: socket.user._id, name: socket.user.name, role: socket.user.role },
+          onlineUserIds,
         };
 
         socket.emit('joined_room', successPayload);
@@ -106,9 +156,43 @@ const initChatSocket = (io) => {
     socket.on('leave_room', (data, callback) => {
       const applicationId = typeof data === 'string' ? data : data?.applicationId;
       if (applicationId) {
-        socket.leave(`application_${applicationId}`);
-        socket.emit('left_room', { applicationId });
-        if (typeof callback === 'function') callback({ success: true, applicationId });
+        const roomName = `application_${applicationId}`;
+        if (socket.rooms.has(roomName)) {
+          const isNowOffline = removeUserFromRoom(roomName, userId);
+          if (isNowOffline) {
+            socket.to(roomName).emit('user_offline', { applicationId, userId });
+          }
+          socket.leave(roomName);
+          socket.emit('left_room', { applicationId });
+          if (typeof callback === 'function') callback({ success: true, applicationId });
+        }
+      }
+    });
+
+    // Typing indicators (relay only if joined to that application room)
+    socket.on('typing', (data) => {
+      const applicationId = typeof data === 'string' ? data : data?.applicationId;
+      if (!applicationId) return;
+      const roomName = `application_${applicationId}`;
+      if (socket.rooms.has(roomName)) {
+        socket.to(roomName).emit('typing', {
+          applicationId,
+          userId,
+          name: socket.user.name,
+        });
+      }
+    });
+
+    socket.on('stop_typing', (data) => {
+      const applicationId = typeof data === 'string' ? data : data?.applicationId;
+      if (!applicationId) return;
+      const roomName = `application_${applicationId}`;
+      if (socket.rooms.has(roomName)) {
+        socket.to(roomName).emit('stop_typing', {
+          applicationId,
+          userId,
+          name: socket.user.name,
+        });
       }
     });
 
@@ -126,6 +210,13 @@ const initChatSocket = (io) => {
 
         if (!text || typeof text !== 'string' || !text.trim()) {
           const errPayload = { message: 'Message text cannot be empty' };
+          socket.emit('error', errPayload);
+          if (typeof callback === 'function') callback({ success: false, ...errPayload });
+          return;
+        }
+
+        if (text.trim().length > 2000) {
+          const errPayload = { message: 'Message text cannot exceed 2000 characters' };
           socket.emit('error', errPayload);
           if (typeof callback === 'function') callback({ success: false, ...errPayload });
           return;
@@ -188,8 +279,25 @@ const initChatSocket = (io) => {
         socket.emit('error', { message: 'Internal server error sending message' });
       }
     });
+
+    // Handle disconnecting: emit user_offline to all application rooms
+    socket.on('disconnecting', () => {
+      for (const roomName of socket.rooms) {
+        if (roomName.startsWith('application_')) {
+          const appId = roomName.replace('application_', '');
+          const isNowOffline = removeUserFromRoom(roomName, userId);
+          if (isNowOffline) {
+            socket.to(roomName).emit('user_offline', { applicationId: appId, userId });
+          }
+        }
+      }
+    });
+
+    // Handle complete disconnect
+    socket.on('disconnect', () => {
+      console.log(`Socket disconnected: ${socket.user.name} (${userId})`);
+    });
   });
 };
 
 module.exports = initChatSocket;
-

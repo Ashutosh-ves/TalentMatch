@@ -22,7 +22,9 @@ const sendMessageValidation = [
   body('text')
     .trim()
     .notEmpty()
-    .withMessage('Message text cannot be empty'),
+    .withMessage('Message text cannot be empty')
+    .isLength({ max: 2000 })
+    .withMessage('Message text cannot exceed 2000 characters'),
 ];
 
 // All routes require authentication

@@ -22,6 +22,7 @@ const adminRoutes = require('./routes/adminRoutes');
 const applicationRoutes = require('./routes/applicationRoutes');
 const authRoutes = require('./routes/authRoutes');
 const messageRoutes = require('./routes/messageRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 const openingRoutes = require('./routes/openingRoutes');
 const recruiterRoutes = require('./routes/recruiterRoutes');
 const studentRoutes = require('./routes/studentRoutes');
@@ -74,7 +75,7 @@ app.use(morgan(morganFormat));
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Rate limiter for /api/auth (20 requests per 15 min per IP)
+// Rate limiter for /api/auth (20 requests per 15 min per IP on login/register)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -85,7 +86,8 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
-app.use('/api/auth', authLimiter);
+app.post('/api/auth/login', authLimiter);
+app.post('/api/auth/register', authLimiter);
 
 // Base health endpoints
 app.get('/', (req, res) => {
@@ -101,6 +103,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/applications', applicationRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/messages', messageRoutes);
+app.use('/api/notifications', notificationRoutes);
 app.use('/api/openings', openingRoutes);
 app.use('/api/recruiters', recruiterRoutes);
 app.use('/api/students', studentRoutes);

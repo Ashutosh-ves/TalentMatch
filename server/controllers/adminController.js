@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const { validationResult } = require('express-validator');
 const User = require('../models/User');
 const Recruiter = require('../models/Recruiter');
+const { createAndEmit } = require('../services/notificationService');
 
 // Helper to resolve a User document from either User _id or Recruiter profile _id
 const resolveRecruiterUser = async (id) => {
@@ -81,6 +82,13 @@ const approveRecruiter = async (req, res, next) => {
     user.status = 'approved';
     await user.save();
 
+    const io = req.app.get('io');
+    await createAndEmit(io, {
+      userId: user._id,
+      type: 'recruiter_approved',
+      message: 'Your recruiter account has been approved! You can now create and post job openings.',
+    });
+
     return res.status(200).json({
       success: true,
       message: 'Recruiter approved successfully',
@@ -123,6 +131,13 @@ const rejectRecruiter = async (req, res, next) => {
 
     user.status = 'rejected';
     await user.save();
+
+    const io = req.app.get('io');
+    await createAndEmit(io, {
+      userId: user._id,
+      type: 'recruiter_rejected',
+      message: 'Your recruiter account registration has been rejected.',
+    });
 
     return res.status(200).json({
       success: true,
@@ -167,6 +182,21 @@ const updateRecruiterStatus = async (req, res, next) => {
 
     user.status = status;
     await user.save();
+
+    const io = req.app.get('io');
+    if (status === 'approved') {
+      await createAndEmit(io, {
+        userId: user._id,
+        type: 'recruiter_approved',
+        message: 'Your recruiter account has been approved! You can now create and post job openings.',
+      });
+    } else if (status === 'rejected') {
+      await createAndEmit(io, {
+        userId: user._id,
+        type: 'recruiter_rejected',
+        message: 'Your recruiter account registration has been rejected.',
+      });
+    }
 
     return res.status(200).json({
       success: true,

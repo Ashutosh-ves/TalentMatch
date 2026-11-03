@@ -1,7 +1,7 @@
 const path = require('path');
 const dotenv = require('dotenv');
 
-// Load environment variables
+// Load environment variables (server/.env and root .env fallback)
 dotenv.config({ path: path.join(__dirname, '../.env') });
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
@@ -13,6 +13,61 @@ const User = require('../models/User');
 const Student = require('../models/Student');
 const Recruiter = require('../models/Recruiter');
 const Opening = require('../models/Opening');
+const Application = require('../models/Application');
+const Message = require('../models/Message');
+const Notification = require('../models/Notification');
+
+const { fetchGithubUserData } = require('../services/githubService');
+const { calculateMatchScore } = require('../services/matchService');
+
+// Profile overrides: customise student extraSkills and interests here
+const PROFILE_OVERRIDES = {
+  'ashutosh.m@talentmatch.com': {
+    extraSkills: ['React', 'Node.js', 'Tailwind CSS', 'Django', 'FastAPI'],
+    interests: ['Full-Stack Development', 'Open Source', 'Applied AI'],
+  },
+  'shivam.m@talentmatch.com': {
+    extraSkills: [], // User can edit extra skills here
+    interests: ['Open Source', 'Web Development'], // User can edit interests here
+  },
+  'shivam.k@talentmatch.com': {
+    extraSkills: [], // User can edit extra skills here
+    interests: ['Open Source', 'Web Development'], // User can edit interests here
+  },
+  'maanas.c@talentmatch.com': {
+    extraSkills: [], // User can edit extra skills here
+    interests: ['Open Source', 'Web Development'], // User can edit interests here
+  },
+  'swayam.m@talentmatch.com': {
+    extraSkills: [], // User can edit extra skills here
+    interests: ['Open Source', 'Web Development'], // User can edit interests here
+  },
+};
+
+// Demo applications mapping (seeded when running with --demo)
+const DEMO_APPLICATIONS = [
+  {
+    studentEmail: 'ashutosh.m@talentmatch.com',
+    openingTitle: 'Frontend Developer Intern',
+    status: 'shortlisted',
+  },
+  {
+    studentEmail: 'shivam.m@talentmatch.com',
+    openingTitle: 'Backend Developer Intern',
+    status: 'accepted',
+  },
+  {
+    studentEmail: 'swayam.m@talentmatch.com',
+    openingTitle: 'Frontend Developer Intern',
+    status: 'rejected',
+  },
+  {
+    studentEmail: 'maanas.c@talentmatch.com',
+    openingTitle: 'Backend Developer Intern',
+    status: 'applied',
+  },
+  // Shivam K gets no application, so he can apply live during the demo
+];
 
 async function seed() {
   // Refuse to run in production
@@ -21,7 +76,11 @@ async function seed() {
     process.exit(1);
   }
 
-  console.log('--- STARTING DATABASE SEEDING ---');
+  const isDemo = process.argv.includes('--demo');
+  console.log(`\n=============================================================`);
+  console.log(`         STARTING DATABASE SEEDING (Mode: ${isDemo ? 'DEMO' : 'STANDARD'})        `);
+  console.log(`=============================================================`);
+
   await connectDB();
 
   // Helper for idempotent upsert of Users
@@ -47,7 +106,86 @@ async function seed() {
   }
 
   try {
-    // 1. Admin
+    // -------------------------------------------------------------
+    // 1. CLEAN UP LEGACY FAKE DATA (IDEMPOTENT)
+    // -------------------------------------------------------------
+    console.log('\n[1/5] Cleaning up legacy fake test data (student.alex, student.devin, old openings)...');
+
+    // 1a. Clean up legacy students (Alex & Devin)
+    const legacyEmails = ['student.alex@talentmatch.com', 'student.devin@talentmatch.com'];
+    const legacyUsers = await User.find({
+      $or: [
+        { email: { $in: legacyEmails } },
+        { name: { $in: ['Alex Rivera', 'Devin Vance'] } },
+      ],
+    });
+    const legacyUserIds = legacyUsers.map((u) => u._id);
+
+    if (legacyUserIds.length > 0) {
+      const legacyApps = await Application.find({ studentId: { $in: legacyUserIds } });
+      const legacyAppIds = legacyApps.map((a) => a._id);
+
+      await Message.deleteMany({
+        $or: [
+          { applicationId: { $in: legacyAppIds } },
+          { senderId: { $in: legacyUserIds } },
+        ],
+      });
+      await Notification.deleteMany({
+        $or: [
+          { userId: { $in: legacyUserIds } },
+          { applicationId: { $in: legacyAppIds } },
+        ],
+      });
+      await Application.deleteMany({ studentId: { $in: legacyUserIds } });
+      await Student.deleteMany({ userId: { $in: legacyUserIds } });
+      await User.deleteMany({ _id: { $in: legacyUserIds } });
+      console.log(`  ✓ Removed ${legacyUserIds.length} legacy student users and all related docs.`);
+    } else {
+      console.log('  ✓ No legacy student users found to clean up.');
+    }
+
+    // Clean up any lingering notifications/messages referencing Alex Rivera or Devin Vance
+    await Notification.deleteMany({
+      message: { $regex: /Alex Rivera|Devin Vance/i },
+    });
+    await Message.deleteMany({
+      text: { $regex: /Alex Rivera|Devin Vance/i },
+    });
+
+    // 1b. Clean up legacy openings owned by approved recruiter
+    const existingApprovedUser = await User.findOne({ email: 'recruiter.approved@talentmatch.com' });
+    if (existingApprovedUser) {
+      const legacyOpenings = await Opening.find({
+        recruiterId: existingApprovedUser._id,
+        title: { $in: ['Senior Frontend Engineer', 'Cloud Backend Architect'] },
+      });
+      const legacyOpeningIds = legacyOpenings.map((o) => o._id);
+
+      if (legacyOpeningIds.length > 0) {
+        const legacyOpeningApps = await Application.find({ openingId: { $in: legacyOpeningIds } });
+        const legacyOpeningAppIds = legacyOpeningApps.map((a) => a._id);
+
+        await Message.deleteMany({ applicationId: { $in: legacyOpeningAppIds } });
+        await Notification.deleteMany({
+          $or: [
+            { openingId: { $in: legacyOpeningIds } },
+            { applicationId: { $in: legacyOpeningAppIds } },
+          ],
+        });
+        await Application.deleteMany({ openingId: { $in: legacyOpeningIds } });
+        await Opening.deleteMany({ _id: { $in: legacyOpeningIds } });
+        console.log(`  ✓ Removed ${legacyOpeningIds.length} legacy openings and all related docs.`);
+      } else {
+        console.log('  ✓ No legacy openings found to clean up.');
+      }
+    }
+
+    // -------------------------------------------------------------
+    // 2. ADMIN & RECRUITERS (CLEAN REALISTIC NAMES)
+    // -------------------------------------------------------------
+    console.log('\n[2/5] Upserting Admin & Recruiters with realistic names...');
+
     const admin = await upsertUser({
       name: 'System Administrator',
       email: 'admin@talentmatch.com',
@@ -56,9 +194,8 @@ async function seed() {
       status: 'approved',
     });
 
-    // 2. Approved Recruiter
     const approvedRecruiter = await upsertUser({
-      name: 'Sarah Connor (Approved Recruiter)',
+      name: 'Priya Nair',
       email: 'recruiter.approved@talentmatch.com',
       password: 'RecruiterPassword123!',
       role: 'recruiter',
@@ -74,9 +211,8 @@ async function seed() {
       { upsert: true, returnDocument: 'after' }
     );
 
-    // 3. Pending Recruiter
     const pendingRecruiter = await upsertUser({
-      name: 'John Matrix (Pending Recruiter)',
+      name: 'Rohan Mehta',
       email: 'recruiter.pending@talentmatch.com',
       password: 'RecruiterPassword123!',
       role: 'recruiter',
@@ -91,108 +227,343 @@ async function seed() {
       },
       { upsert: true, returnDocument: 'after' }
     );
+    console.log('  ✓ Admin, Priya Nair (Nexus Tech Global), and Rohan Mehta (Apex Innovations) upserted.');
 
-    // 4. Student 1 (Frontend specialist)
-    const student1 = await upsertUser({
-      name: 'Alex Rivera',
-      email: 'student.alex@talentmatch.com',
-      password: 'StudentPassword123!',
-      role: 'student',
-      status: 'approved',
-    });
-    await Student.findOneAndUpdate(
-      { userId: student1._id },
+    // -------------------------------------------------------------
+    // 3. FIVE REAL STUDENT PROFILES + GITHUB API FETCH
+    // -------------------------------------------------------------
+    console.log('\n[3/5] Fetching real GitHub stats and upserting 5 student profiles...');
+
+    const STUDENTS_CONFIG = [
       {
-        userId: student1._id,
-        skills: ['React', 'JavaScript', 'TypeScript', 'Node.js', 'Tailwind CSS'],
-        interests: ['Frontend Engineering', 'UI/UX Design', 'Fullstack Development'],
-        availability: 'Immediate',
-        githubUsername: 'alexrivera-dev',
-        githubStats: {
-          contributions: 145,
-          topLanguages: ['TypeScript', 'JavaScript', 'HTML'],
-          repoCount: 16,
-        },
-        linkedinUrl: 'https://linkedin.com/in/alex-rivera-dev',
-        portfolioUrl: 'https://alexrivera.dev',
+        name: 'Ashutosh M',
+        email: 'ashutosh.m@talentmatch.com',
+        githubUsername: 'Ashutosh-ves',
       },
-      { upsert: true, returnDocument: 'after' }
-    );
-
-    // 5. Student 2 (Backend specialist)
-    const student2 = await upsertUser({
-      name: 'Devin Vance',
-      email: 'student.devin@talentmatch.com',
-      password: 'StudentPassword123!',
-      role: 'student',
-      status: 'approved',
-    });
-    await Student.findOneAndUpdate(
-      { userId: student2._id },
       {
-        userId: student2._id,
-        skills: ['Python', 'Django', 'FastAPI', 'PostgreSQL', 'Docker'],
-        interests: ['Backend Systems', 'Distributed Systems', 'DevOps'],
-        availability: '2 Weeks Notice',
-        githubUsername: 'devinvance-py',
-        githubStats: {
-          contributions: 92,
-          topLanguages: ['Python', 'SQL', 'Shell'],
-          repoCount: 11,
-        },
-        linkedinUrl: 'https://linkedin.com/in/devin-vance-py',
-        portfolioUrl: 'https://devinvance.io',
+        name: 'Shivam M',
+        email: 'shivam.m@talentmatch.com',
+        githubUsername: 'Thetwobraincells',
       },
-      { upsert: true, returnDocument: 'after' }
-    );
-
-    // 6. Job Openings owned by Approved Recruiter
-    // Active Opening
-    const activeOpening = await Opening.findOneAndUpdate(
-      { recruiterId: approvedRecruiter._id, title: 'Senior Frontend Engineer' },
       {
-        recruiterId: approvedRecruiter._id,
-        title: 'Senior Frontend Engineer',
-        description: 'Lead architecture of responsive modern web applications with React, TypeScript and Tailwind CSS.',
-        requiredSkills: ['React', 'TypeScript', 'Tailwind CSS', 'Node.js'],
-        availabilityNeeds: 'Immediate',
+        name: 'Shivam K',
+        email: 'shivam.k@talentmatch.com',
+        githubUsername: 'ShivammKshirsagar',
+      },
+      {
+        name: 'Maanas C',
+        email: 'maanas.c@talentmatch.com',
+        githubUsername: 'MVC2408',
+      },
+      {
+        name: 'Swayam M',
+        email: 'swayam.m@talentmatch.com',
+        githubUsername: 'swayammankar',
+      },
+    ];
+
+    const githubSummaryTable = [];
+    const failedFetches = [];
+    const seededStudents = {};
+
+    for (const studentDef of STUDENTS_CONFIG) {
+      const user = await upsertUser({
+        name: studentDef.name,
+        email: studentDef.email,
+        password: 'StudentPassword123!',
+        role: 'student',
+        status: 'approved',
+      });
+
+      const existingProfile = await Student.findOne({ userId: user._id });
+      let githubStats = existingProfile?.githubStats || { contributions: 0, topLanguages: [], repoCount: 0 };
+      let fetchSuccess = false;
+
+      try {
+        const fetchedStats = await fetchGithubUserData(studentDef.githubUsername);
+        if (fetchedStats) {
+          githubStats = fetchedStats;
+          fetchSuccess = true;
+        }
+      } catch (err) {
+        console.warn(`  ⚠️  [WARNING] Could not fetch GitHub metrics for ${studentDef.name} (@${studentDef.githubUsername}): ${err.message}`);
+        failedFetches.push({ name: studentDef.name, username: studentDef.githubUsername, error: err.message });
+        if (!existingProfile?.githubStats?.repoCount) {
+          githubStats = { contributions: 0, topLanguages: [], repoCount: 0 };
+        }
+      }
+
+      // Compute skills: fetched topLanguages (max 5) + extraSkills from overrides
+      const override = PROFILE_OVERRIDES[studentDef.email] || { extraSkills: [], interests: [] };
+      const topLangs = Array.isArray(githubStats.topLanguages) ? githubStats.topLanguages.slice(0, 5) : [];
+      const combinedSkills = Array.from(new Set([...topLangs, ...(override.extraSkills || [])]));
+      const interests = override.interests && override.interests.length > 0
+        ? override.interests
+        : ['Open Source', 'Web Development'];
+
+      const studentDoc = await Student.findOneAndUpdate(
+        { userId: user._id },
+        {
+          userId: user._id,
+          skills: combinedSkills,
+          interests,
+          availability: 'Internship',
+          githubUsername: studentDef.githubUsername,
+          githubStats,
+          linkedinUrl: '',
+          portfolioUrl: '',
+        },
+        { upsert: true, returnDocument: 'after' }
+      );
+
+      seededStudents[studentDef.email] = { user, studentDoc };
+
+      githubSummaryTable.push({
+        'Student Name': studentDef.name,
+        'GitHub Username': `@${studentDef.githubUsername}`,
+        'Repo Count': githubStats.repoCount ?? 0,
+        'Contributions (YTD)': githubStats.contributions ?? 0,
+        'Top Languages': (githubStats.topLanguages || []).join(', ') || 'None',
+        'API Fetch Status': fetchSuccess ? 'Live API Success' : (githubStats.repoCount ? 'Retained Cache' : 'Empty (Failed)'),
+      });
+    }
+
+    // -------------------------------------------------------------
+    // 4. REALISTIC JOB OPENINGS (OWNED BY APPROVED RECRUITER)
+    // -------------------------------------------------------------
+    console.log('\n[4/5] Upserting realistic job openings...');
+
+    const OPENINGS_CONFIG = [
+      {
+        title: 'Frontend Developer Intern',
         status: 'active',
+        availabilityNeeds: 'Internship',
+        requiredSkills: ['React', 'JavaScript', 'Tailwind CSS', 'HTML'],
+        description:
+          'Join our core engineering team to build responsive, accessible web interfaces using React, JavaScript, and Tailwind CSS. You will collaborate closely with UI designers and senior engineers to deliver seamless user experiences.',
       },
-      { upsert: true, returnDocument: 'after' }
-    );
-
-    // Draft Opening
-    const draftOpening = await Opening.findOneAndUpdate(
-      { recruiterId: approvedRecruiter._id, title: 'Cloud Backend Architect' },
       {
-        recruiterId: approvedRecruiter._id,
-        title: 'Cloud Backend Architect',
-        description: 'Design and deploy scalable backend services and microservices.',
-        requiredSkills: ['Python', 'PostgreSQL', 'Docker'],
-        availabilityNeeds: 'Flexible',
-        status: 'draft',
+        title: 'Backend Developer Intern',
+        status: 'active',
+        availabilityNeeds: 'Internship',
+        requiredSkills: ['Python', 'JavaScript', 'Node.js', 'Docker'],
+        description:
+          'Work alongside platform engineers to develop scalable REST APIs, microservices, and containerized backends using Python, Node.js, and Docker. You will contribute to database performance optimizations, automated testing pipelines, and cloud service deployments.',
       },
-      { upsert: true, returnDocument: 'after' }
-    );
+      {
+        title: 'Open-Source Contributor: Developer Tooling',
+        status: 'draft',
+        availabilityNeeds: 'Part-time',
+        requiredSkills: ['TypeScript', 'Python', 'Git'],
+        description:
+          'Help design and maintain developer tools, CLI utilities, and open-source SDKs across TypeScript and Python ecosystems. You will triage community feedback, improve documentation and automated CI/CD workflows, and author modular open-source libraries.',
+      },
+    ];
 
+    const seededOpenings = {};
+    for (const opDef of OPENINGS_CONFIG) {
+      const opening = await Opening.findOneAndUpdate(
+        { recruiterId: approvedRecruiter._id, title: opDef.title },
+        {
+          recruiterId: approvedRecruiter._id,
+          title: opDef.title,
+          description: opDef.description,
+          requiredSkills: opDef.requiredSkills,
+          availabilityNeeds: opDef.availabilityNeeds,
+          status: opDef.status,
+        },
+        { upsert: true, returnDocument: 'after' }
+      );
+      seededOpenings[opDef.title] = opening;
+      console.log(`  ✓ Opening "${opening.title}" (${opening.status}) upserted.`);
+    }
+
+    // -------------------------------------------------------------
+    // 5. DEMO MODE DATA SEEDING (APPLICATIONS, CHAT, NOTIFICATIONS)
+    // -------------------------------------------------------------
+    let demoApplicationsReport = [];
+    if (isDemo) {
+      console.log('\n[5/5] Demo mode active: Upserting applications, conversation, and notifications...');
+
+      for (const demoApp of DEMO_APPLICATIONS) {
+        const studentInfo = seededStudents[demoApp.studentEmail];
+        const opening = seededOpenings[demoApp.openingTitle];
+
+        if (!studentInfo || !opening) {
+          console.warn(`  ⚠️  Skipping demo application for ${demoApp.studentEmail} -> ${demoApp.openingTitle} (missing record)`);
+          continue;
+        }
+
+        const studentSkills = studentInfo.studentDoc.skills || [];
+        const matchScore = calculateMatchScore(studentSkills, opening.requiredSkills);
+
+        const app = await Application.findOneAndUpdate(
+          { studentId: studentInfo.user._id, openingId: opening._id },
+          {
+            $set: {
+              status: demoApp.status,
+              matchScore,
+            },
+            $setOnInsert: {
+              studentId: studentInfo.user._id,
+              openingId: opening._id,
+              appliedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000), // 3 days ago
+            },
+          },
+          { upsert: true, returnDocument: 'after' }
+        );
+
+        // 5a. Seed Recruiter Notification: "application_received"
+        await Notification.findOneAndUpdate(
+          {
+            userId: approvedRecruiter._id,
+            type: 'application_received',
+            applicationId: app._id,
+          },
+          {
+            $set: {
+              message: `${studentInfo.user.name} applied to ${opening.title}`,
+              isRead: false,
+            },
+            $setOnInsert: {
+              userId: approvedRecruiter._id,
+              type: 'application_received',
+              applicationId: app._id,
+              openingId: opening._id,
+              createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+            },
+          },
+          { upsert: true, returnDocument: 'after' }
+        );
+
+        // 5b. Seed Student Notification (shortlisted/accepted/rejected only)
+        if (['shortlisted', 'accepted', 'rejected'].includes(demoApp.status)) {
+          let notifType;
+          let notifMessage;
+          if (demoApp.status === 'shortlisted') {
+            notifType = 'application_shortlisted';
+            notifMessage = `Your application for "${opening.title}" has been shortlisted!`;
+          } else if (demoApp.status === 'accepted') {
+            notifType = 'application_accepted';
+            notifMessage = `Congratulations! Your application for "${opening.title}" has been accepted!`;
+          } else if (demoApp.status === 'rejected') {
+            notifType = 'application_rejected';
+            notifMessage = `Your application for "${opening.title}" was not selected.`;
+          }
+
+          await Notification.findOneAndUpdate(
+            {
+              userId: studentInfo.user._id,
+              type: notifType,
+              applicationId: app._id,
+            },
+            {
+              $set: {
+                message: notifMessage,
+                isRead: false,
+              },
+              $setOnInsert: {
+                userId: studentInfo.user._id,
+                type: notifType,
+                applicationId: app._id,
+                openingId: opening._id,
+                createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
+              },
+            },
+            { upsert: true, returnDocument: 'after' }
+          );
+        }
+
+        // 5c. Seed short 4-message conversation on the shortlisted application only if no messages exist yet
+        let messagesSeeded = false;
+        if (demoApp.status === 'shortlisted') {
+          const existingMsgCount = await Message.countDocuments({ applicationId: app._id });
+          if (existingMsgCount === 0) {
+            const now = Date.now();
+            await Message.create([
+              {
+                applicationId: app._id,
+                senderId: approvedRecruiter._id,
+                text: 'Hi Ashutosh, thank you for applying! We were impressed by your React and full-stack projects on GitHub.',
+                timestamp: new Date(now - 30 * 60 * 1000),
+              },
+              {
+                applicationId: app._id,
+                senderId: studentInfo.user._id,
+                text: "Hi Priya, thank you! I'm really excited about Nexus Tech Global's product roadmap.",
+                timestamp: new Date(now - 25 * 60 * 1000),
+              },
+              {
+                applicationId: app._id,
+                senderId: approvedRecruiter._id,
+                text: "We'd love to schedule a 30-minute introductory call this week. Would Thursday afternoon work for you?",
+                timestamp: new Date(now - 18 * 60 * 1000),
+              },
+              {
+                applicationId: app._id,
+                senderId: studentInfo.user._id,
+                text: 'Thursday afternoon works great for me! Looking forward to discussing the role.',
+                timestamp: new Date(now - 10 * 60 * 1000),
+              },
+            ]);
+            messagesSeeded = true;
+          }
+        }
+
+        demoApplicationsReport.push({
+          Student: studentInfo.user.name,
+          Email: studentInfo.user.email,
+          Opening: opening.title,
+          Status: app.status,
+          'Match Score': `${app.matchScore}%`,
+          'Conversation Seeded': demoApp.status === 'shortlisted' ? (messagesSeeded ? '4 messages (Created)' : '4 messages (Retained)') : 'None',
+        });
+      }
+    } else {
+      console.log('\n[5/5] Standard mode: Skipping demo applications (run `npm run seed:demo` for pipeline data).');
+    }
+
+    // -------------------------------------------------------------
+    // 6. OUTPUT & SUMMARY TABLES
+    // -------------------------------------------------------------
     console.log('\n=============================================================');
-    console.log('             TALENT MATCH SEEDED CREDENTIALS                 ');
+    console.log('             TALENT MATCH DEMO CREDENTIALS                   ');
     console.log('=============================================================');
     console.table([
       { Role: 'Admin', Name: admin.name, Email: admin.email, Password: 'AdminPassword123!', Status: admin.status },
       { Role: 'Approved Recruiter', Name: approvedRecruiter.name, Email: approvedRecruiter.email, Password: 'RecruiterPassword123!', Status: approvedRecruiter.status },
       { Role: 'Pending Recruiter', Name: pendingRecruiter.name, Email: pendingRecruiter.email, Password: 'RecruiterPassword123!', Status: pendingRecruiter.status },
-      { Role: 'Student 1', Name: student1.name, Email: student1.email, Password: 'StudentPassword123!', Status: student1.status },
-      { Role: 'Student 2', Name: student2.name, Email: student2.email, Password: 'StudentPassword123!', Status: student2.status },
+      ...STUDENTS_CONFIG.map((s, idx) => ({
+        Role: `Student ${idx + 1}`,
+        Name: s.name,
+        Email: s.email,
+        Password: 'StudentPassword123!',
+        Status: 'approved',
+      })),
     ]);
-    console.log('Openings seeded for approved recruiter:');
-    console.log(`- Active: "${activeOpening.title}" (ID: ${activeOpening._id})`);
-    console.log(`- Draft:  "${draftOpening.title}" (ID: ${draftOpening._id})`);
-    console.log('=============================================================\n');
 
-    console.log('Seeding completed successfully!');
+    console.log('\n=============================================================');
+    console.log('              FETCHED GITHUB METRICS SUMMARY                 ');
+    console.log('=============================================================');
+    console.table(githubSummaryTable);
+
+    if (failedFetches.length > 0) {
+      console.log('\n⚠️  FAILED GITHUB FETCHES:');
+      console.table(failedFetches);
+    } else {
+      console.log('\n✓ All 5 GitHub profiles successfully resolved via GitHub REST API.');
+    }
+
+    if (isDemo && demoApplicationsReport.length > 0) {
+      console.log('\n=============================================================');
+      console.log('               SEEDED DEMO APPLICATION PIPELINE             ');
+      console.log('=============================================================');
+      console.table(demoApplicationsReport);
+    }
+
+    console.log('\nDatabase seeding completed successfully!');
   } catch (error) {
-    console.error('Seeding error:', error);
+    console.error('Seeding execution error:', error);
     process.exitCode = 1;
   } finally {
     await mongoose.disconnect();
