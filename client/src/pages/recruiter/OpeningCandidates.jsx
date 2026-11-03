@@ -3,6 +3,8 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { openingService } from '../../services/openingService';
 import { applicationService } from '../../services/applicationService';
+import { useDebounce } from '../../hooks/useDebounce';
+import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 
 export function OpeningCandidates() {
   const { id } = useParams();
@@ -10,8 +12,10 @@ export function OpeningCandidates() {
   const queryClient = useQueryClient();
 
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const [selectedSkills, setSelectedSkills] = useState([]);
   const [feedback, setFeedback] = useState(null);
+  const [candidateToReject, setCandidateToReject] = useState(null);
 
   // Fetch opening info
   const { data: openingData } = useQuery({
@@ -82,8 +86,8 @@ export function OpeningCandidates() {
     const studentName = cand.studentId?.name || '';
     const studentEmail = cand.studentId?.email || '';
     const matchesSearch =
-      studentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      studentEmail.toLowerCase().includes(searchQuery.toLowerCase());
+      studentName.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+      studentEmail.toLowerCase().includes(debouncedSearchQuery.toLowerCase());
 
     // Match selected skills if any are toggled
     const studentSkills = cand.studentSkills || [];
@@ -368,7 +372,7 @@ export function OpeningCandidates() {
 
                     <button
                       type="button"
-                      onClick={() => rejectMutation.mutate(candidate._id)}
+                      onClick={() => setCandidateToReject(candidate)}
                       disabled={candidate.status === 'rejected' || rejectMutation.isPending}
                       className="flex-1 md:w-full border border-border-hairline text-primary font-label-mono text-xs py-3 px-4 hover:border-error hover:text-error disabled:opacity-50 transition-colors uppercase cursor-pointer"
                     >
@@ -403,6 +407,30 @@ export function OpeningCandidates() {
           })}
         </section>
       )}
+      {/* ConfirmDialog for Reject Candidate */}
+      <ConfirmDialog
+        isOpen={Boolean(candidateToReject)}
+        onClose={() => setCandidateToReject(null)}
+        onConfirm={() => {
+          if (candidateToReject?._id) {
+            rejectMutation.mutate(candidateToReject._id);
+            setCandidateToReject(null);
+          }
+        }}
+        title="Reject Candidate Application?"
+        description={
+          <span>
+            Are you sure you want to mark the application from{' '}
+            <strong className="text-primary">
+              {candidateToReject?.studentId?.name || candidateToReject?.studentId?.email || 'this candidate'}
+            </strong>{' '}
+            as rejected?
+          </span>
+        }
+        confirmText="Reject Application"
+        confirmVariant="danger"
+        isLoading={rejectMutation.isPending}
+      />
     </div>
   );
 }

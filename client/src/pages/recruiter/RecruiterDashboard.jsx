@@ -1,9 +1,11 @@
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { openingService } from '../../services/openingService';
+import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 
-function OpeningCard({ opening }) {
+function OpeningCard({ opening, onDeleteClick }) {
   const { data: candidatesData } = useQuery({
     queryKey: ['openingCandidatesCount', opening._id],
     queryFn: () => openingService.getOpeningRankedCandidates(opening._id),
@@ -53,10 +55,18 @@ function OpeningCard({ opening }) {
       <div className="flex items-center gap-3 w-full md:w-auto">
         <Link
           to={`/recruiter/openings/${opening._id}/edit`}
-          className="px-5 py-3 border border-border-hairline bg-transparent text-text-muted hover:text-primary hover:border-primary font-label-mono text-xs uppercase tracking-wider transition-colors text-center"
+          className="px-4 py-3 border border-border-hairline bg-transparent text-text-muted hover:text-primary hover:border-primary font-label-mono text-xs uppercase tracking-wider transition-colors text-center"
         >
           Edit
         </Link>
+        <button
+          type="button"
+          onClick={() => onDeleteClick(opening)}
+          className="px-4 py-3 border border-border-hairline bg-transparent text-text-muted hover:text-error hover:border-error font-label-mono text-xs uppercase tracking-wider transition-colors text-center cursor-pointer"
+          title="Delete opening"
+        >
+          Delete
+        </button>
         <Link
           to={`/recruiter/openings/${opening._id}/candidates`}
           className="flex-1 md:flex-none px-6 py-3 border border-border-hairline bg-transparent text-primary hover:border-primary hover:bg-black hover:text-white font-label-mono text-xs uppercase tracking-wider transition-all text-center font-bold"
@@ -69,8 +79,20 @@ function OpeningCard({ opening }) {
 }
 
 export function RecruiterDashboard() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
+  const queryClient = useQueryClient();
+
+  const [openingToDelete, setOpeningToDelete] = useState(null);
+  const [feedback, setFeedback] = useState(null);
+
+  // Refresh user data on mount to catch status updates from admin
+  useEffect(() => {
+    refreshUser?.();
+  }, [refreshUser]);
+
   const isPending = user?.status === 'pending';
+  const isRejected = user?.status === 'rejected';
+  const canPost = !isPending && !isRejected;
 
   const {
     data: openingsData,
@@ -81,10 +103,43 @@ export function RecruiterDashboard() {
     queryFn: openingService.getMyOpenings,
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id) => openingService.deleteOpening(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['myOpenings'] });
+      setFeedback({
+        type: 'success',
+        message: 'Job opening has been deleted successfully.',
+      });
+      setOpeningToDelete(null);
+    },
+    onError: (err) => {
+      setFeedback({
+        type: 'error',
+        message: err.response?.data?.message || err.message || 'Failed to delete opening.',
+      });
+      setOpeningToDelete(null);
+    },
+  });
+
   const openings = openingsData?.openings || [];
 
   return (
     <div className="flex flex-col gap-8 py-6">
+      {/* Rejected Status Banner */}
+      {isRejected && (
+        <div className="w-full bg-error-container border border-error/50 p-4 -mt-2 mb-2">
+          <div className="flex items-center gap-3 text-on-error-container">
+            <span className="material-symbols-outlined text-xl text-error shrink-0">cancel</span>
+            <p className="font-body-md text-xs md:text-sm">
+              <strong className="font-bold">Account Registration Rejected.</strong> Your company account
+              was not approved by an administrator. Posting actions are disabled. Please contact support
+              if you believe this is an error.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Pending Approval Banner matching stitch_talent_match_recruiter_dashboard */}
       {isPending && (
         <div className="w-full bg-error-container border border-error/30 p-4 -mt-2 mb-2">
@@ -96,6 +151,30 @@ export function RecruiterDashboard() {
               profile.
             </p>
           </div>
+        </div>
+      )}
+
+      {/* Inline Feedback Banner */}
+      {feedback && (
+        <div
+          className={`p-4 flex items-center justify-between border-l-4 ${
+            feedback.type === 'success'
+              ? 'bg-surface-container text-primary border-primary'
+              : 'bg-error-container text-on-error-container border-error'
+          }`}
+        >
+          <div className="flex items-center gap-2 text-xs font-label-mono">
+            <span className="material-symbols-outlined text-base">
+              {feedback.type === 'success' ? 'check_circle' : 'error'}
+            </span>
+            <span>{feedback.message}</span>
+          </div>
+          <button
+            onClick={() => setFeedback(null)}
+            className="text-text-muted hover:text-primary font-bold text-sm cursor-pointer"
+          >
+            ×
+          </button>
         </div>
       )}
 
@@ -114,12 +193,27 @@ export function RecruiterDashboard() {
         </div>
 
         <div>
-          <Link
-            to="/recruiter/openings/new"
-            className="inline-flex items-center justify-center bg-primary text-on-primary font-label-mono text-xs px-8 py-4 uppercase tracking-widest hover:bg-match-indicator transition-colors font-bold shrink-0"
-          >
-            + Post New Opening
-          </Link>
+          {canPost ? (
+            <Link
+              to="/recruiter/openings/new"
+              className="inline-flex items-center justify-center bg-primary text-on-primary font-label-mono text-xs px-8 py-4 uppercase tracking-widest hover:bg-match-indicator transition-colors font-bold shrink-0"
+            >
+              + Post New Opening
+            </Link>
+          ) : (
+            <button
+              type="button"
+              disabled
+              title={
+                isRejected
+                  ? 'Posting is disabled because your account registration was rejected.'
+                  : 'Posting is disabled while your recruiter account is pending review.'
+              }
+              className="inline-flex items-center justify-center bg-surface-container text-text-muted font-label-mono text-xs px-8 py-4 uppercase tracking-widest border border-border-hairline cursor-not-allowed font-bold shrink-0 opacity-60"
+            >
+              + Post New Opening (Disabled)
+            </button>
+          )}
         </div>
       </section>
 
@@ -158,12 +252,22 @@ export function RecruiterDashboard() {
           <p className="font-body-md text-xs text-text-muted max-w-md mx-auto mb-6">
             Create your first engineering role requirement to discover ranked student portfolios.
           </p>
-          <Link
-            to="/recruiter/openings/new"
-            className="inline-block px-8 py-3.5 bg-primary text-on-primary font-label-mono text-xs uppercase tracking-wider hover:bg-match-indicator transition-colors font-bold"
-          >
-            Post Your First Role
-          </Link>
+          {canPost ? (
+            <Link
+              to="/recruiter/openings/new"
+              className="inline-block px-8 py-3.5 bg-primary text-on-primary font-label-mono text-xs uppercase tracking-wider hover:bg-match-indicator transition-colors font-bold"
+            >
+              Post Your First Role
+            </Link>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className="inline-block px-8 py-3.5 bg-surface-container text-text-muted font-label-mono text-xs uppercase tracking-wider border border-border-hairline cursor-not-allowed font-bold opacity-60"
+            >
+              Post Your First Role (Disabled)
+            </button>
+          )}
         </div>
       )}
 
@@ -179,11 +283,35 @@ export function RecruiterDashboard() {
 
           <div className="flex flex-col gap-4">
             {openings.map((opening) => (
-              <OpeningCard key={opening._id} opening={opening} />
+              <OpeningCard
+                key={opening._id}
+                opening={opening}
+                onDeleteClick={(op) => setOpeningToDelete(op)}
+              />
             ))}
           </div>
         </section>
       )}
+
+      {/* Reusable ConfirmDialog for Delete Opening */}
+      <ConfirmDialog
+        isOpen={Boolean(openingToDelete)}
+        onClose={() => setOpeningToDelete(null)}
+        onConfirm={() => {
+          if (openingToDelete?._id) {
+            deleteMutation.mutate(openingToDelete._id);
+          }
+        }}
+        title="Delete Job Opening?"
+        description={
+          <span>
+            Are you sure you want to delete <strong className="text-primary">{openingToDelete?.title}</strong>? This will remove the opening and all associated candidate pipeline rankings. This action cannot be undone.
+          </span>
+        }
+        confirmText="Delete Opening"
+        confirmVariant="danger"
+        isLoading={deleteMutation.isPending}
+      />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import studentService from '../../services/studentService';
 import openingService from '../../services/openingService';
 import applicationService from '../../services/applicationService';
+import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 
 const AVAILABILITY_LABELS = {
   immediate: 'Immediate (Ready to start)',
@@ -25,6 +26,7 @@ export function CandidateProfile() {
 
   const openingId = searchParams.get('openingId') || location.state?.openingId || '';
   const [feedback, setFeedback] = useState(null);
+  const [isRejectConfirmOpen, setIsRejectConfirmOpen] = useState(false);
 
   // 1. Fetch Student Profile
   const {
@@ -340,7 +342,7 @@ export function CandidateProfile() {
 
                 <button
                   type="button"
-                  onClick={() => rejectMutation.mutate(currentApplication._id)}
+                  onClick={() => setIsRejectConfirmOpen(true)}
                   disabled={appStatus === 'rejected' || rejectMutation.isPending}
                   className={`flex-1 md:flex-initial px-6 py-3.5 border font-label-mono text-xs uppercase tracking-wider transition-colors cursor-pointer rounded ${
                     appStatus === 'rejected'
@@ -647,6 +649,28 @@ export function CandidateProfile() {
           </div>
         )}
       </section>
+      {/* ConfirmDialog for Reject Candidate */}
+      <ConfirmDialog
+        isOpen={isRejectConfirmOpen}
+        onClose={() => setIsRejectConfirmOpen(false)}
+        onConfirm={() => {
+          if (currentApplication?._id) {
+            rejectMutation.mutate(currentApplication._id);
+            setIsRejectConfirmOpen(false);
+          }
+        }}
+        title="Reject Candidate Application?"
+        description={
+          <span>
+            Are you sure you want to mark the application from{' '}
+            <strong className="text-primary">{user.name || user.email || 'this candidate'}</strong>{' '}
+            as rejected?
+          </span>
+        }
+        confirmText="Reject Application"
+        confirmVariant="danger"
+        isLoading={rejectMutation.isPending}
+      />
     </div>
   );
 }

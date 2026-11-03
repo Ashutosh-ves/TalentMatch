@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../hooks/useSocket';
+import { useDebounce } from '../hooks/useDebounce';
 import messageService from '../services/messageService';
 import applicationService from '../services/applicationService';
 import openingService from '../services/openingService';
@@ -17,6 +18,7 @@ export function InterviewChat() {
   const [inputMessage, setInputMessage] = useState('');
   const [selectedAppId, setSelectedAppId] = useState(null);
   const [searchFilter, setSearchFilter] = useState('');
+  const debouncedSearchFilter = useDebounce(searchFilter, 300);
   const [isOtherUserTyping, setIsOtherUserTyping] = useState(false);
   const [otherUserTypingName, setOtherUserTypingName] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -345,8 +347,8 @@ export function InterviewChat() {
   const matchScore = currentApplication?.matchScore ?? 95;
 
   const filteredConversations = conversationsList.filter((conv) => {
-    if (!searchFilter.trim()) return true;
-    const term = searchFilter.toLowerCase();
+    if (!debouncedSearchFilter.trim()) return true;
+    const term = debouncedSearchFilter.toLowerCase();
     const candidateName = conv.studentId?.name || '';
     const jobTitle = conv.openingId?.title || '';
     const company = conv.openingId?.recruiterId?.name || '';

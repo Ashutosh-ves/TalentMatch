@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import adminService from '../../services/adminService';
+import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 
 export function AdminDashboard() {
   const queryClient = useQueryClient();
   const [feedback, setFeedback] = useState(null);
+  const [pendingAction, setPendingAction] = useState(null); // { type: 'approve' | 'reject', recruiter }
 
   // 1. Fetch pending recruiters
   const {
@@ -218,7 +220,7 @@ export function AdminDashboard() {
                     <button
                       type="button"
                       disabled={isActionPending}
-                      onClick={() => rejectMutation.mutate(recruiter._id)}
+                      onClick={() => setPendingAction({ type: 'reject', recruiter })}
                       className="bg-transparent border border-border-hairline text-primary font-label-mono text-xs px-4 py-2 hover:border-error hover:text-error disabled:opacity-50 transition-colors duration-200 w-full md:w-auto text-center uppercase font-bold cursor-pointer"
                     >
                       Reject
@@ -227,7 +229,7 @@ export function AdminDashboard() {
                     <button
                       type="button"
                       disabled={isActionPending}
-                      onClick={() => approveMutation.mutate(recruiter._id)}
+                      onClick={() => setPendingAction({ type: 'approve', recruiter })}
                       className="bg-primary text-on-primary font-label-mono text-xs px-4 py-2 hover:bg-secondary disabled:opacity-50 transition-colors duration-200 w-full md:w-auto text-center uppercase font-bold cursor-pointer"
                     >
                       Approve
@@ -239,6 +241,34 @@ export function AdminDashboard() {
           </div>
         )}
       </div>
+
+      {/* Accessible ConfirmDialog for Admin Approve / Reject */}
+      <ConfirmDialog
+        isOpen={Boolean(pendingAction)}
+        onClose={() => setPendingAction(null)}
+        onConfirm={() => {
+          if (!pendingAction) return;
+          if (pendingAction.type === 'approve') {
+            approveMutation.mutate(pendingAction.recruiter._id);
+          } else if (pendingAction.type === 'reject') {
+            rejectMutation.mutate(pendingAction.recruiter._id);
+          }
+          setPendingAction(null);
+        }}
+        title={pendingAction?.type === 'approve' ? 'Approve Recruiter Account?' : 'Reject Recruiter Account?'}
+        description={
+          <span>
+            Are you sure you want to {pendingAction?.type === 'approve' ? 'approve' : 'reject'} the recruiter registration for{' '}
+            <strong className="text-primary">{pendingAction?.recruiter?.companyName || pendingAction?.recruiter?.userId?.name || 'this company'}</strong>?
+            {pendingAction?.type === 'approve'
+              ? ' This will grant the recruiter full access to post job openings and review candidate rankings.'
+              : ' This will reject the account and prevent them from posting openings.'}
+          </span>
+        }
+        confirmText={pendingAction?.type === 'approve' ? 'Approve Account' : 'Reject Account'}
+        confirmVariant={pendingAction?.type === 'approve' ? 'primary' : 'danger'}
+        isLoading={approveMutation.isPending || rejectMutation.isPending}
+      />
     </div>
   );
 }

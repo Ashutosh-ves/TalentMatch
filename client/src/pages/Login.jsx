@@ -23,6 +23,11 @@ export function Login() {
   const [serverError, setServerError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const searchParams = new URLSearchParams(location.search);
+  const isSessionExpired = searchParams.get('expired') === 'true' || location.state?.expired;
+  const sessionExpiredMessage =
+    location.state?.message || (isSessionExpired ? 'Your session has expired. Please log in again.' : null);
+
   // If already authenticated, redirect to role-based dashboard
   if (isAuthenticated) {
     return <Navigate to={getRoleDashboard(role)} replace />;
@@ -149,6 +154,14 @@ export function Login() {
             LOGIN
           </p>
         </div>
+
+        {/* Session Expired Notice */}
+        {sessionExpiredMessage && (
+          <div className="flex items-center gap-3 p-3.5 mb-6 bg-error-container text-on-error-container border border-error/30 text-xs font-label-mono">
+            <span className="material-symbols-outlined text-[18px] text-error shrink-0">lock_clock</span>
+            <span>{sessionExpiredMessage}</span>
+          </div>
+        )}
 
         {/* Redirect Notice if coming from a protected route */}
         {location.state?.from && (

@@ -1,9 +1,15 @@
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { openingService } from '../../services/openingService';
 import { studentService } from '../../services/studentService';
+import { useDebounce } from '../../hooks/useDebounce';
 
 export function StudentDashboard() {
+  const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
+  const [selectedSkills, setSelectedSkills] = useState([]);
+
   const {
     data: recsData,
     isLoading: isRecsLoading,
@@ -19,7 +25,7 @@ export function StudentDashboard() {
   });
 
   const student = profileData?.student;
-  const recommendations = recsData?.recommendations || [];
+  const recommendations = useMemo(() => recsData?.recommendations || [], [recsData?.recommendations]);
 
   const githubActive = Boolean(student?.githubUsername);
   const skillsCount = student?.skills?.length || 0;
@@ -27,6 +33,55 @@ export function StudentDashboard() {
     100,
     (githubActive ? 40 : 0) + Math.min(40, skillsCount * 10) + (student?.availability ? 20 : 0)
   );
+
+  // Extract unique required skills from all recommendation openings
+  const availableSkills = useMemo(() => {
+    const set = new Set();
+    recommendations.forEach((op) => {
+      op.requiredSkills?.forEach((sk) => {
+        if (sk && sk.trim()) set.add(sk.trim());
+      });
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [recommendations]);
+
+  const toggleSkill = (skill) => {
+    setSelectedSkills((prev) =>
+      prev.includes(skill) ? prev.filter((s) => s !== skill) : [...prev, skill]
+    );
+  };
+
+  const clearFilters = () => {
+    setSearchQuery('');
+    setSelectedSkills([]);
+  };
+
+  // Filter recommendations by debounced search and active skill filters
+  const filteredRecommendations = useMemo(() => {
+    return recommendations.filter((opening) => {
+      if (debouncedSearchQuery.trim()) {
+        const term = debouncedSearchQuery.toLowerCase();
+        const titleMatch = (opening.title || '').toLowerCase().includes(term);
+        const companyMatch = (opening.recruiterId?.name || '').toLowerCase().includes(term);
+        const descMatch = (opening.description || '').toLowerCase().includes(term);
+        if (!titleMatch && !companyMatch && !descMatch) {
+          return false;
+        }
+      }
+
+      if (selectedSkills.length > 0) {
+        const opSkills = (opening.requiredSkills || []).map((s) => s.toLowerCase().trim());
+        const hasAllSelected = selectedSkills.every((s) =>
+          opSkills.includes(s.toLowerCase().trim())
+        );
+        if (!hasAllSelected) return false;
+      }
+
+      return true;
+    });
+  }, [recommendations, debouncedSearchQuery, selectedSkills]);
+
+  const hasActiveFilters = Boolean(searchQuery.trim() || selectedSkills.length > 0);
 
   return (
     <div className="flex flex-col lg:flex-row gap-8 py-6">
@@ -107,6 +162,70 @@ export function StudentDashboard() {
           </p>
         </div>
 
+        {/* Search & Skill Filter Bar */}
+        <div className="bg-surface-container-lowest border border-border-hairline p-5 flex flex-col gap-4">
+          <div className="relative flex items-center">
+            <span className="material-symbols-outlined absolute left-0 text-text-muted text-base pointer-events-none">
+              search
+            </span>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search openings by role, company, or tech stack..."
+              className="w-full bg-transparent border-0 border-b-2 border-border-hairline py-2.5 pl-7 pr-8 font-label-mono text-xs text-primary placeholder:text-text-muted focus:border-primary outline-none transition-colors rounded-none"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-0 text-text-muted hover:text-primary text-base font-bold cursor-pointer"
+                aria-label="Clear search"
+              >
+                ×
+              </button>
+            )}
+          </div>
+
+          {availableSkills.length > 0 && (
+            <div className="flex flex-col gap-2 pt-2 border-t border-border-hairline">
+              <div className="flex items-center justify-between">
+                <span className="font-label-mono text-[11px] text-text-muted uppercase tracking-wider">
+                  Filter by Required Skill
+                </span>
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="font-label-mono text-[11px] text-primary hover:underline uppercase tracking-wider cursor-pointer"
+                  >
+                    Clear Filters
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {availableSkills.map((skill) => {
+                  const isSelected = selectedSkills.includes(skill);
+                  return (
+                    <button
+                      key={skill}
+                      type="button"
+                      onClick={() => toggleSkill(skill)}
+                      className={`font-label-mono text-xs px-2.5 py-1 border transition-colors cursor-pointer ${
+                        isSelected
+                          ? 'bg-primary text-on-primary border-primary font-bold'
+                          : 'bg-surface-container-low border-border-hairline text-primary hover:border-primary'
+                      }`}
+                    >
+                      {isSelected ? `✓ ${skill}` : skill}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Loading State */}
         {isRecsLoading && (
           <div className="flex flex-col gap-4 py-8">
@@ -131,7 +250,7 @@ export function StudentDashboard() {
           </div>
         )}
 
-        {/* Empty State */}
+        {/* Empty State (No openings from backend) */}
         {!isRecsLoading && !recsError && recommendations.length === 0 && (
           <div className="bg-surface-container-lowest border border-dashed border-border-hairline p-12 text-center">
             <span className="material-symbols-outlined text-4xl text-text-muted mb-2">
@@ -153,10 +272,35 @@ export function StudentDashboard() {
           </div>
         )}
 
+        {/* Empty Filter State (Filtered out by search or skill) */}
+        {!isRecsLoading &&
+          !recsError &&
+          recommendations.length > 0 &&
+          filteredRecommendations.length === 0 && (
+            <div className="bg-surface-container-lowest border border-dashed border-border-hairline p-12 text-center">
+              <span className="material-symbols-outlined text-4xl text-text-muted mb-2">
+                filter_alt_off
+              </span>
+              <h3 className="font-headline-md text-lg font-bold text-primary mb-2">
+                No Matching Openings
+              </h3>
+              <p className="font-body-md text-xs text-text-muted max-w-md mx-auto mb-6">
+                No recommended openings matched your current search and skill filter combination.
+              </p>
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="inline-block px-6 py-3 bg-primary text-on-primary font-label-mono text-xs uppercase tracking-wider hover:bg-match-indicator transition-colors cursor-pointer"
+              >
+                Reset Search & Filters
+              </button>
+            </div>
+          )}
+
         {/* Openings Cards List */}
-        {!isRecsLoading && recommendations.length > 0 && (
+        {!isRecsLoading && filteredRecommendations.length > 0 && (
           <div className="flex flex-col gap-6">
-            {recommendations.map((opening) => {
+            {filteredRecommendations.map((opening) => {
               const recruiterName = opening.recruiterId?.name || 'Partner Company';
               const matchScore = typeof opening.matchScore === 'number' ? opening.matchScore : 0;
               const isHighMatch = matchScore >= 70;

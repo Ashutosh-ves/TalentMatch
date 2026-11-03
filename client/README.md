@@ -1,16 +1,51 @@
-# React + Vite
+# Talent Match — Frontend Client
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+The frontend client for Talent Match, an AI-informed engineering recruitment and candidate alignment platform connecting university students with recruiters.
 
-Currently, two official plugins are available:
+## Tech Stack
+- **Framework**: React 19 + Vite 6
+- **Routing**: React Router v7
+- **Data Fetching & Cache**: TanStack React Query v5
+- **Styling**: Tailwind CSS v4
+- **Real-Time Communication**: Socket.io Client
+- **HTTP Client**: Axios
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Prerequisites
+- Node.js (v18 or higher recommended)
+- Running Talent Match backend server (default: `http://localhost:5000`)
 
-## React Compiler
+## Environment Setup
+Create a `.env` file in the `client/` root (or configure variables in the root `.env`):
+```env
+VITE_API_BASE_URL=/api
+VITE_SOCKET_URL=http://localhost:5000
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Available Scripts
 
-## Expanding the Oxlint configuration
+In the `client/` directory, you can run:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+- `npm run dev`: Starts the Vite development server with HMR on `http://localhost:5173`.
+- `npm run build`: Compiles and bundles production-ready assets into `dist/`.
+- `npm run preview`: Locally previews the production build.
+- `npm run lint`: Runs Oxlint static code analysis across source files.
+
+## Project Structure
+```text
+client/
+├── public/              # Static assets and favicons
+├── src/
+│   ├── assets/          # Project graphics and imagery
+│   ├── components/      # Common, student, and recruiter UI components
+│   │   ├── common/      # Shared Navbar, Footer, ProtectedRoute, Layout, ConfirmDialog
+│   │   ├── recruiter/   # Recruiter-specific components
+│   │   └── student/     # Student-specific components
+│   ├── context/         # AuthContext and SocketContext providers
+│   ├── hooks/           # Custom hooks (useAuth, useSocket, useDebounce)
+│   ├── pages/           # 13 role-specific & shared page views
+│   │   ├── admin/       # AdminDashboard
+│   │   ├── recruiter/   # RecruiterDashboard, PostEditOpening, OpeningCandidates, CandidateProfile
+│   │   └── student/     # StudentDashboard, StudentProfile, OpeningDetails, MyApplications
+│   ├── services/        # Axios API client & domain services
+│   └── utils/           # Roles, formatters, and helper constants
+```

@@ -21,9 +21,20 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.status === 401) {
+      const requestUrl = error.config?.url || '';
+      // Don't intercept login or register authentication attempts
+      if (!requestUrl.includes('/auth/login') && !requestUrl.includes('/auth/register')) {
+        localStorage.removeItem('talent_match_token');
+        localStorage.removeItem('talent_match_user');
+
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login?expired=true';
+        }
+      }
+    }
     return Promise.reject(error);
   }
 );
 
 export default api;
-
