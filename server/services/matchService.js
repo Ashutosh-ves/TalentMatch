@@ -3,13 +3,10 @@
  * Computes weighted matching score and detailed breakdown between a Student and an Opening.
  */
 
-// Recognised programming languages and alias mapping
+// Recognised programming languages and alias mapping (excludes runtimes/frameworks like Node.js or React)
 const PROGRAMMING_LANGUAGES = {
   javascript: 'JavaScript',
   js: 'JavaScript',
-  node: 'JavaScript',
-  nodejs: 'JavaScript',
-  'node.js': 'JavaScript',
   typescript: 'TypeScript',
   ts: 'TypeScript',
   python: 'Python',

@@ -607,33 +607,32 @@ Set `CLIENT_URL` on the backend to the deployed frontend origin, and allow the h
 
 **Legend:** ✅ Done and verified in the code · 🟡 Implemented, final verification pending · ⬜ Not started
 
-**Overall: 68 of 103 items verified done (66%)** · 9 implemented, awaiting final verification · 26 not started
+**Overall: 72 of 103 items verified done (70%)** · 6 implemented, awaiting final verification · 25 not started
 
-`█████████████░░░░░░░` 66%
+`██████████████░░░░░░` 70%
 
 | Section | ✅ Done | 🟡 Pending check | ⬜ Not started |
 |---|---|---|---|
-| 1. Frontend Development | 13 | 0 | 2 |
+| 1. Frontend Development | 14 | 0 | 1 |
 | 2. React Concepts | 8 | 0 | 0 |
 | 3. State Management | 3 | 0 | 0 |
 | 4. Backend REST API | 5 | 0 | 0 |
 | 5. MongoDB + Mongoose | 6 | 0 | 0 |
 | 6. Secure REST API | 6 | 0 | 0 |
 | 7. Authentication and Authorization | 10 | 0 | 0 |
-| 8. Real-Time Features | 2 | 3 | 0 |
+| 8. Real-Time Features | 5 | 0 | 0 |
 | 9. Docker | 0 | 0 | 5 |
 | 10. DevOps and Deployment | 2 | 2 | 6 |
 | 11. Project Quality | 8 | 4 | 2 |
 | 12. Testing | 0 | 0 | 5 |
 | 13. Final Deliverables | 5 | 0 | 6 |
 
-
 ### 1. Frontend Development (React + Tailwind CSS)
 
 | Item | Status | Proof |
 |---|---|---|
 | Mobile, tablet and desktop layouts | ✅ | Responsive Tailwind breakpoints (`md:`, `lg:`) on every page; grids collapse to one column on mobile |
-| Responsive navigation / menu | ⬜ | `client/src/components/common/Navbar.jsx` hides links below `md`; a mobile menu is the next task |
+| Responsive navigation / menu | ✅ | `client/src/components/common/Navbar.jsx`: below `md` a hamburger opens an accessible slide-over drawer (ARIA dialog, focus trap, `Esc`, outside click, scroll lock) with the same role-specific links; the notification bell stays visible |
 | Proper spacing and typography | ✅ | Type scale and fonts defined in `client/src/index.css` (`@theme`) |
 | Dark / light mode (optional) | ⬜ | Optional, single theme by design |
 | Tailwind used throughout | ✅ | `@tailwindcss/vite` plugin in `client/vite.config.js`; utilities used across all pages |
@@ -721,10 +720,10 @@ Set `CLIENT_URL` on the backend to the deployed frontend origin, and allow the h
 | Item | Status | Proof |
 |---|---|---|
 | WebSocket / Socket.IO implemented | ✅ | `server/sockets/chatSocket.js` with JWT handshake; `client/src/context/SocketContext.jsx` |
-| Real-time updates | 🟡 | Messages are live (`receive_message`); live application status updates arrive with `application_updated` |
-| Live notifications | 🟡 | Persisted notifications plus `notification` socket event and navbar bell |
+| Real-time updates | ✅ | Messages via `receive_message`; status changes via `application_updated` (emitted in `applicationController.js`, handled in `SocketContext.jsx` by invalidating the affected queries) |
+| Live notifications | ✅ | `Notification` model + `notificationService.createAndEmit` (saves, then emits `notification` to `user_<id>`); REST in `notificationController.js`; navbar bell with unread badge, plus toasts in `SocketContext.jsx` |
 | Live chat | ✅ | `InterviewChat.jsx` with message history and live delivery; gated to shortlisted/accepted on the server |
-| Connection / disconnection handling | 🟡 | Client reconnect and offline banner are done; server presence (`user_online` / `user_offline`) pending final check |
+| Connection / disconnection handling | ✅ | Client auto-reconnect with offline banner and automatic room re-join; server presence (`user_online` / `user_offline`) and `disconnecting` cleanup in `chatSocket.js` |
 
 ### 9. Docker
 
@@ -759,7 +758,7 @@ Set `CLIENT_URL` on the backend to the deployed frontend origin, and allow the h
 | Clean code | ✅ | Linted client (`oxlint`), layered server, JSDoc on services |
 | Reusable components | ✅ | `components/common/` and shared hooks |
 | Comments where necessary | ✅ | Explanatory comments on access rules, indexes and gating logic |
-| No unused files or code | 🟡 | Boilerplate removed; the duplicate root `.env.example` is still to be deleted |
+| No unused files or code | 🟡 | Boilerplate and the duplicate root `.env.example` are gone; stale duplicate screens remain inside `stitch_talent_match_web_ui.zip` |
 | Regular commits | 🟡 | See the commit history |
 | Meaningful commit messages | 🟡 | See the commit history |
 | Feature branches used | 🟡 | See the branch and PR history |
@@ -800,6 +799,6 @@ Set `CLIENT_URL` on the backend to the deployed frontend origin, and allow the h
 
 <div align="center">
 
-Built by **&lt;Ashutosh Mishra D15A&gt;** · Full Stack Development Mini-Project
+Built by **Ashutosh Mishra (D15A)** · Full Stack Development Mini-Project
 
 </div>

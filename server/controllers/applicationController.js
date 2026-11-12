@@ -4,7 +4,7 @@ const Application = require('../models/Application');
 const Opening = require('../models/Opening');
 const Student = require('../models/Student');
 const { computeMatch } = require('../services/matchService');
-const { createAndEmit } = require('../services/notificationService');
+const { safeNotify } = require('../services/notificationService');
 const { attachCompanyName } = require('../utils/attachCompanyName');
 
 const VALID_STATUSES = ['applied', 'shortlisted', 'accepted', 'rejected'];
@@ -97,7 +97,7 @@ const updateStatusHelper = async (req, res, next, newStatus) => {
           notifMessage = `Your application for "${openingTitle}" was not selected.`;
         }
 
-        await createAndEmit(io, {
+        await safeNotify(io, {
           userId: studentUserId,
           type: notifType,
           message: notifMessage,
@@ -196,7 +196,7 @@ const applyToOpening = async (req, res, next) => {
         path: 'openingId',
         populate: {
           path: 'recruiterId',
-          select: 'name email role status',
+          select: 'name',
         },
       })
       .lean();
@@ -211,7 +211,7 @@ const applyToOpening = async (req, res, next) => {
     const studentName = req.user.name || 'A candidate';
     const notifMessage = `${studentName} applied to ${opening.title}`;
 
-    await createAndEmit(io, {
+    await safeNotify(io, {
       userId: opening.recruiterId,
       type: 'application_received',
       message: notifMessage,
@@ -249,7 +249,7 @@ const getMyApplications = async (req, res, next) => {
         path: 'openingId',
         populate: {
           path: 'recruiterId',
-          select: 'name email role status',
+          select: 'name',
         },
       })
       .sort({ appliedAt: -1 })
@@ -354,13 +354,15 @@ const getApplicationById = async (req, res, next) => {
       });
     }
 
+    const recruiterSelect = req.user.role === 'student' ? 'name' : 'name email role status';
+
     const application = await Application.findById(req.params.id)
       .populate('studentId', 'name email role status')
       .populate({
         path: 'openingId',
         populate: {
           path: 'recruiterId',
-          select: 'name email role status',
+          select: recruiterSelect,
         },
       })
       .lean();

@@ -126,12 +126,15 @@ const initChatSocket = (io) => {
         }
 
         const roomName = `application_${applicationId}`;
-        socket.join(roomName);
 
-        // Presence tracking: add user to room and notify other participants
-        const isNewlyOnline = addUserToRoom(roomName, userId);
-        if (isNewlyOnline) {
-          socket.to(roomName).emit('user_online', { applicationId, userId });
+        if (!socket.rooms.has(roomName)) {
+          socket.join(roomName);
+
+          // Presence tracking: add user to room and notify other participants
+          const isNewlyOnline = addUserToRoom(roomName, userId);
+          if (isNewlyOnline) {
+            socket.to(roomName).emit('user_online', { applicationId, userId });
+          }
         }
 
         const onlineUserIds = getOnlineUsersInRoom(roomName);

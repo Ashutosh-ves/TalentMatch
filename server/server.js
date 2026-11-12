@@ -75,10 +75,10 @@ app.use(morgan(morganFormat));
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Rate limiter for /api/auth (20 requests per 15 min per IP on login/register)
+// Rate limiter for /api/auth (20 requests per 15 min per IP in production, 200 otherwise)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: process.env.NODE_ENV === 'production' ? 20 : 200,
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again after 15 minutes',

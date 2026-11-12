@@ -20,44 +20,27 @@ const Notification = require('../models/Notification');
 const { fetchGithubUserData } = require('../services/githubService');
 const { computeMatch } = require('../services/matchService');
 
-// Profile overrides: customise student extraSkills, availability and interests here
+// Profile overrides: edit extraSkills and interests for each student here
 const PROFILE_OVERRIDES = {
-  'student.alex@talentmatch.com': {
-    skills: ['React', 'JavaScript', 'Tailwind CSS', 'HTML', 'Git'],
-    availability: 'Internship',
-    interests: ['Frontend Engineering', 'UI/UX Design', 'Web Performance'],
-    githubStats: { repoCount: 8, contributions: 25, topLanguages: ['JavaScript', 'HTML'] },
-  },
-  'student.devin@talentmatch.com': {
-    skills: ['Python', 'FastAPI', 'PostgreSQL', 'Docker'],
-    availability: 'Full-time',
-    interests: ['Backend Systems', 'Microservices', 'Distributed Data'],
-    githubStats: { repoCount: 4, contributions: 6, topLanguages: ['Python'] },
-  },
   'ashutosh.m@talentmatch.com': {
     extraSkills: ['React', 'Node.js', 'Tailwind CSS', 'Django', 'FastAPI'],
-    availability: 'Internship',
     interests: ['Full-Stack Development', 'Open Source', 'Applied AI'],
   },
   'shivam.m@talentmatch.com': {
-    extraSkills: [],
-    availability: 'Full-time',
-    interests: ['Open Source', 'Web Development'],
+    extraSkills: [], // Edit extra skills here
+    interests: ['Open Source', 'Web Development'], // Edit interests here
   },
   'shivam.k@talentmatch.com': {
-    extraSkills: [],
-    availability: 'Part-time',
-    interests: ['Open Source', 'Web Development'],
+    extraSkills: [], // Edit extra skills here
+    interests: ['Open Source', 'Web Development'], // Edit interests here
   },
   'maanas.c@talentmatch.com': {
-    extraSkills: [],
-    availability: 'Contract',
-    interests: ['Open Source', 'Web Development'],
+    extraSkills: [], // Edit extra skills here
+    interests: ['Open Source', 'Web Development'], // Edit interests here
   },
   'swayam.m@talentmatch.com': {
-    extraSkills: [],
-    availability: 'Internship',
-    interests: ['Open Source', 'Web Development'],
+    extraSkills: [], // Edit extra skills here
+    interests: ['Open Source', 'Web Development'], // Edit interests here
   },
 };
 
@@ -81,16 +64,6 @@ const DEMO_APPLICATIONS = [
   {
     studentEmail: 'maanas.c@talentmatch.com',
     openingTitle: 'Backend Developer Intern',
-    status: 'applied',
-  },
-  {
-    studentEmail: 'student.alex@talentmatch.com',
-    openingTitle: 'Frontend Developer Intern',
-    status: 'applied',
-  },
-  {
-    studentEmail: 'student.devin@talentmatch.com',
-    openingTitle: 'Frontend Developer Intern',
     status: 'applied',
   },
   // Shivam K gets no application, so he can apply live during the demo
@@ -134,9 +107,50 @@ async function seed() {
 
   try {
     // -------------------------------------------------------------
-    // 1. CLEAN UP OBSOLETE DATA (IDEMPOTENT)
+    // 1. CLEAN UP LEGACY FAKE DATA (IDEMPOTENT)
     // -------------------------------------------------------------
-    console.log('\n[1/5] Checking database state and cleaning obsolete records...');
+    console.log('\n[1/5] Cleaning up legacy fake test data (student.alex, student.devin, old openings)...');
+
+    const legacyEmails = ['student.alex@talentmatch.com', 'student.devin@talentmatch.com'];
+    const legacyUsers = await User.find({
+      $or: [
+        { email: { $in: legacyEmails } },
+        { name: { $in: ['Alex Rivera', 'Devin Vance'] } },
+      ],
+    });
+    const legacyUserIds = legacyUsers.map((u) => u._id);
+
+    if (legacyUserIds.length > 0) {
+      const legacyApps = await Application.find({ studentId: { $in: legacyUserIds } });
+      const legacyAppIds = legacyApps.map((a) => a._id);
+
+      await Message.deleteMany({
+        $or: [
+          { applicationId: { $in: legacyAppIds } },
+          { senderId: { $in: legacyUserIds } },
+        ],
+      });
+      await Notification.deleteMany({
+        $or: [
+          { userId: { $in: legacyUserIds } },
+          { applicationId: { $in: legacyAppIds } },
+        ],
+      });
+      await Application.deleteMany({ studentId: { $in: legacyUserIds } });
+      await Student.deleteMany({ userId: { $in: legacyUserIds } });
+      await User.deleteMany({ _id: { $in: legacyUserIds } });
+      console.log(`  ✓ Removed ${legacyUserIds.length} legacy student users and all related docs.`);
+    } else {
+      console.log('  ✓ No legacy student users found to clean up.');
+    }
+
+    // Also clean up any lingering notifications/messages referencing Alex Rivera or Devin Vance
+    await Notification.deleteMany({
+      message: { $regex: /Alex Rivera|Devin Vance/i },
+    });
+    await Message.deleteMany({
+      text: { $regex: /Alex Rivera|Devin Vance/i },
+    });
 
     // Clean up old openings if with outdated titles
     const existingApprovedUser = await User.findOne({ email: 'recruiter.approved@talentmatch.com' });
@@ -215,23 +229,11 @@ async function seed() {
     console.log('  ✓ Admin, Priya Nair (Nexus Tech Global), and Rohan Mehta (Apex Innovations) upserted.');
 
     // -------------------------------------------------------------
-    // 3. STUDENT PROFILES WITH VARIED AVAILABILITY & SKILLS
+    // 3. FIVE REAL STUDENT PROFILES + GITHUB API FETCH
     // -------------------------------------------------------------
-    console.log('\n[3/5] Upserting student profiles with diverse availability and skills...');
+    console.log('\n[3/5] Fetching real GitHub stats and upserting 5 student profiles...');
 
     const STUDENTS_CONFIG = [
-      {
-        name: 'Alex Rivera',
-        email: 'student.alex@talentmatch.com',
-        githubUsername: 'alex-rivera-tm',
-        isStatic: true,
-      },
-      {
-        name: 'Devin Vance',
-        email: 'student.devin@talentmatch.com',
-        githubUsername: 'devin-vance-tm',
-        isStatic: true,
-      },
       {
         name: 'Ashutosh M',
         email: 'ashutosh.m@talentmatch.com',
@@ -273,39 +275,29 @@ async function seed() {
       });
 
       const existingProfile = await Student.findOne({ userId: user._id });
-      const override = PROFILE_OVERRIDES[studentDef.email] || {};
+      const override = PROFILE_OVERRIDES[studentDef.email] || { extraSkills: [], interests: [] };
 
-      let githubStats = override.githubStats || existingProfile?.githubStats || { contributions: 0, topLanguages: [], repoCount: 0 };
+      let githubStats = existingProfile?.githubStats || { contributions: 0, topLanguages: [], repoCount: 0 };
       let fetchSuccess = false;
 
-      if (!studentDef.isStatic) {
-        try {
-          const fetchedStats = await fetchGithubUserData(studentDef.githubUsername);
-          if (fetchedStats) {
-            githubStats = fetchedStats;
-            fetchSuccess = true;
-          }
-        } catch (err) {
-          console.warn(`  ⚠️  [WARNING] Could not fetch GitHub metrics for ${studentDef.name} (@${studentDef.githubUsername}): ${err.message}`);
-          failedFetches.push({ name: studentDef.name, username: studentDef.githubUsername, error: err.message });
-          if (!existingProfile?.githubStats?.repoCount) {
-            githubStats = { contributions: 0, topLanguages: [], repoCount: 0 };
-          }
+      try {
+        const fetchedStats = await fetchGithubUserData(studentDef.githubUsername);
+        if (fetchedStats) {
+          githubStats = fetchedStats;
+          fetchSuccess = true;
         }
-      } else {
-        fetchSuccess = true;
+      } catch (err) {
+        console.warn(`  ⚠️  [WARNING] Could not fetch GitHub metrics for ${studentDef.name} (@${studentDef.githubUsername}): ${err.message}`);
+        failedFetches.push({ name: studentDef.name, username: studentDef.githubUsername, error: err.message });
+        if (!existingProfile?.githubStats?.repoCount) {
+          githubStats = { contributions: 0, topLanguages: [], repoCount: 0 };
+        }
       }
 
-      // Compute skills & availability
-      let combinedSkills;
-      if (override.skills) {
-        combinedSkills = override.skills;
-      } else {
-        const topLangs = Array.isArray(githubStats.topLanguages) ? githubStats.topLanguages.slice(0, 5) : [];
-        combinedSkills = Array.from(new Set([...topLangs, ...(override.extraSkills || [])]));
-      }
-
-      const availability = override.availability || 'Internship';
+      // Compute skills: fetched topLanguages (max 5) + extraSkills from PROFILE_OVERRIDES
+      const topLangs = Array.isArray(githubStats.topLanguages) ? githubStats.topLanguages.slice(0, 5) : [];
+      const combinedSkills = Array.from(new Set([...topLangs, ...(override.extraSkills || [])]));
+      const availability = 'Internship';
       const interests = override.interests && override.interests.length > 0
         ? override.interests
         : ['Open Source', 'Web Development'];
@@ -335,7 +327,7 @@ async function seed() {
         'Repo Count': githubStats.repoCount ?? 0,
         'Contributions (YTD)': githubStats.contributions ?? 0,
         'Top Languages': (githubStats.topLanguages || []).join(', ') || 'None',
-        'API Fetch Status': studentDef.isStatic ? 'Seeded Baseline' : (fetchSuccess ? 'Live API Success' : (githubStats.repoCount ? 'Retained Cache' : 'Empty (Failed)')),
+        'API Fetch Status': fetchSuccess ? 'Live API Success' : (githubStats.repoCount ? 'Retained Cache' : 'Empty (Failed)'),
       });
     }
 
@@ -356,7 +348,7 @@ async function seed() {
       {
         title: 'Backend Developer Intern',
         status: 'active',
-        availabilityNeeds: 'Full-time',
+        availabilityNeeds: 'Internship',
         requiredSkills: ['Python', 'JavaScript', 'Node.js', 'Docker'],
         description:
           'Work alongside platform engineers to develop scalable REST APIs, microservices, and containerized backends using Python, Node.js, and Docker. You will contribute to database performance optimizations, automated testing pipelines, and cloud service deployments.',

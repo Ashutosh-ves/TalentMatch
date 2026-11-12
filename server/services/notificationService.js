@@ -29,7 +29,25 @@ const createAndEmit = async (io, { userId, type, message, applicationId, opening
   return notification;
 };
 
+/**
+ * Safely calls createAndEmit inside a try/catch so notification failures
+ * are logged and never break or alter the response of an already-succeeded action.
+ *
+ * @param {import('socket.io').Server} [io]
+ * @param {Object} payload
+ * @returns {Promise<import('../models/Notification')|null>}
+ */
+const safeNotify = async (io, payload) => {
+  try {
+    return await createAndEmit(io, payload);
+  } catch (error) {
+    console.error('Notification error (safeNotify):', error);
+    return null;
+  }
+};
+
 module.exports = {
   createAndEmit,
+  safeNotify,
 };
 
