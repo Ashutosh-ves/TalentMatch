@@ -627,7 +627,7 @@
                   "const res = pm.response.json();",
                   "pm.test(\"Pending recruiter blocked with message\", function () {",
                   "    pm.expect(res.success).to.be.false;",
-                  "    pm.expect(res.message.toLowerCase()).to.include(\"approved\");",
+                  "    pm.expect(res.message.toLowerCase()).to.include(\"pending approval\");",
                   "});"
                 ]
               }
@@ -787,7 +787,9 @@
                   "});",
                   "const res = pm.response.json();",
                   "pm.test(\"Role middleware blocks student\", function () {",
-                  "    pm.expect(res.success).to.be.false;"
+                  "    pm.expect(res.success).to.be.false;",
+                  "    pm.expect(res.message.toLowerCase()).to.include(\"restricted\");",
+                  "});"
                 ]
               }
             }

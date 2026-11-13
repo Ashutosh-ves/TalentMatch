@@ -33,11 +33,12 @@
 11. [Real-Time Events](#real-time-events-socketio)
 12. [Security](#security)
 13. [Getting Started](#getting-started)
-14. [Demo Walkthrough](#demo-walkthrough)
-15. [Design System](#design-system)
-16. [Deployment](#deployment)
-17. [Known Limitations and Roadmap](#known-limitations-and-roadmap)
-18. [Full-Stack Project Checklist: Status and Proof](#full-stack-project-checklist-status-and-proof)
+14. [Docker, CI and API Tests](#docker-ci-and-api-tests)
+15. [Demo Walkthrough](#demo-walkthrough)
+16. [Design System](#design-system)
+17. [Deployment](#deployment)
+18. [Known Limitations and Roadmap](#known-limitations-and-roadmap)
+19. [Full-Stack Project Checklist: Status and Proof](#full-stack-project-checklist-status-and-proof)
 
 ---
 
@@ -61,8 +62,6 @@ It is a full-stack MERN application with role-based access control, JWT authenti
 
 ## Screenshots
 
-> Add images to `docs/screenshots/` using the file names below.
-
 | Landing | Student Dashboard |
 |---|---|
 | ![Landing](docs/screenshots/landing.png) | ![Student Dashboard](docs/screenshots/student-dashboard.png) |
@@ -74,6 +73,11 @@ It is a full-stack MERN application with role-based access control, JWT authenti
 | Interview Chat | Admin Approvals |
 |---|---|
 | ![Interview Chat](docs/screenshots/interview-chat.png) | ![Admin Dashboard](docs/screenshots/admin-dashboard.png) |
+
+<p align="center">
+  <img src="docs/screenshots/mobile-menu.png" alt="Mobile navigation drawer at 375 px" width="260"><br>
+  <sub>Mobile navigation drawer (375 px)</sub>
+</p>
 
 The original wireframes and the exported design system live in `stitch_talent_match_web_ui.zip`.
 
@@ -210,19 +214,21 @@ flowchart LR
 ```
 TalentMatch/
 ├── client/                         # React single-page application
-│   └── src/
-│       ├── components/common/      # Layout, Navbar, Footer, ProtectedRoute, ConfirmDialog
-│       ├── context/                # AuthContext, SocketContext
-│       ├── hooks/                  # useAuth, useSocket, useDebounce
-│       ├── pages/
-│       │   ├── Landing.jsx  Login.jsx  Register.jsx  InterviewChat.jsx
-│       │   ├── student/            # StudentDashboard, StudentProfile, OpeningDetails, MyApplications
-│       │   ├── recruiter/          # RecruiterDashboard, PostEditOpening, OpeningCandidates, CandidateProfile
-│       │   └── admin/              # AdminDashboard
-│       ├── services/               # api.js (Axios) + one service per API resource
-│       └── utils/                  # role helpers
+│   ├── src/
+│   │   ├── components/common/      # Layout, Navbar, Footer, ProtectedRoute, ConfirmDialog, MatchBreakdown
+│   │   ├── context/                # AuthContext, SocketContext
+│   │   ├── hooks/                  # useAuth, useSocket, useDebounce
+│   │   ├── pages/
+│   │   │   ├── Landing.jsx  Login.jsx  Register.jsx  InterviewChat.jsx
+│   │   │   ├── student/            # StudentDashboard, StudentProfile, OpeningDetails, MyApplications
+│   │   │   ├── recruiter/          # RecruiterDashboard, PostEditOpening, OpeningCandidates, CandidateProfile
+│   │   │   └── admin/              # AdminDashboard
+│   │   ├── services/               # api.js (Axios) + one service per API resource
+│   │   └── utils/                  # role helpers
+│   ├── Dockerfile  nginx.conf      # Production image: Vite build served by nginx (proxies /api and /socket.io)
+│   └── vercel.json                 # SPA rewrite for Vercel
 ├── server/                         # Express REST API + Socket.IO
-│   ├── config/db.js                # Mongoose connection
+│   ├── config/                     # db.js (Mongoose), env.js (startup validation)
 │   ├── controllers/                # Request handlers per resource
 │   ├── middleware/                 # authMiddleware, roleMiddleware, errorMiddleware
 │   ├── models/                     # User, Student, Recruiter, Opening, Application, Message, Notification
@@ -230,8 +236,17 @@ TalentMatch/
 │   ├── services/                   # matchService, githubService, notificationService
 │   ├── sockets/chatSocket.js       # Socket.IO handlers
 │   ├── scripts/seed.js             # Dev seed (users, profiles, openings, demo data)
+│   ├── utils/                      # generateToken, attachCompanyName
+│   ├── Dockerfile                  # Multi-stage, non-root production image
 │   └── server.js                   # App entry point
-├── stitch_talent_match_web_ui.zip  # Wireframes and design system export
+├── docs/
+│   ├── postman/                    # Postman collection + environments (run in CI with Newman)
+│   ├── screenshots/                # Images used in this README
+│   └── DOCKER.md                   # Docker usage notes
+├── .github/workflows/ci.yml        # CI: lint, build, boot, Docker Compose, API tests
+├── docker-compose.yml              # mongo + server + client (nginx)
+├── .env.docker.example             # Variables for Docker Compose
+├── stitch_talent_match_web_ui.zip  # Wireframes and design system export (kept as design evidence)
 └── README.md
 ```
 
@@ -547,6 +562,54 @@ Open **http://localhost:5173** and use `localhost`, not `127.0.0.1`, because COR
 
 ---
 
+## Docker, CI and API Tests
+
+### Run the whole stack with Docker (optional)
+
+Docker Compose starts MongoDB, the API and the production client (nginx) on one network. The browser talks to a single origin, `http://localhost:8080`; nginx proxies `/api` and `/socket.io` (with WebSocket upgrade) to the API.
+
+```bash
+cp .env.docker.example .env          # then set JWT_SECRET (32+ characters) and optionally GITHUB_TOKEN
+docker compose up --build            # app at http://localhost:8080, API at http://localhost:5000
+
+# seed demo data (the seed refuses to run when NODE_ENV=production, so override it)
+docker compose run --rm -e NODE_ENV=development server npm run seed
+
+docker compose down                  # add -v to also reset the database volume
+```
+
+| Service | Image | Notes |
+|---|---|---|
+| `mongo` | `mongo:7` | Named volume, healthcheck |
+| `server` | built from `server/Dockerfile` | Node 22 Alpine, multi-stage, non-root user, `/api/health` healthcheck |
+| `client` | built from `client/Dockerfile` | Vite build served by nginx 1.27 with SPA fallback |
+
+More detail in [`docs/DOCKER.md`](docs/DOCKER.md).
+
+### Continuous integration
+
+`.github/workflows/ci.yml` (workflow name `CI`) runs on every push and pull request to `main`:
+
+| Job | What it proves |
+|---|---|
+| **Client Lint and Build** | `npm ci`, `npm run lint`, `npm run build` on Node 22 |
+| **Server Test and Seed** | Syntax check of every server file, boots the API against a Mongo service container, seeds it, and logs in as admin |
+| **Docker Compose Integration** | Builds both images, starts the full stack, waits for `/api/health` through nginx, seeds, runs the Postman suite with Newman, checks the served HTML and an admin login through the proxy |
+
+### API tests (Postman / Newman)
+
+The collection in `docs/postman/` has 70 assertions over 35 requests: health, authentication (register, login, `/me`, wrong password, validation and duplicate-email errors), admin approval, role and ownership checks, applications, chat gating, and notifications. It creates its own data and deletes it afterwards.
+
+```bash
+# API running locally and seeded (npm run dev, npm run seed)
+npx newman@6 run docs/postman/TalentMatch.postman_collection.json \
+  -e docs/postman/local.postman_environment.json
+```
+
+Or import the collection and an environment file into Postman. See [`docs/postman/README.md`](docs/postman/README.md).
+
+---
+
 ## Demo Walkthrough
 
 A five-minute path that touches every feature (use two browser profiles).
@@ -577,15 +640,25 @@ Tokens are defined once in `client/src/index.css` under `@theme` and consumed as
 
 ## Deployment
 
-Planned topology (free tiers):
+| Part | Platform | Notes |
+|---|---|---|
+| Frontend | Vercel | Root directory `client`; `client/vercel.json` rewrites all paths to `index.html` |
+| Backend | Render web service, Docker runtime | Root directory `server`; the same image CI builds; health check path `/api/health` |
+| Database | MongoDB Atlas M0 | Network Access must allow Render (`0.0.0.0/0`) |
 
-| Part | Platform |
-|---|---|
-| Frontend | Vercel (set `VITE_API_BASE_URL` and `VITE_SOCKET_URL` to the API URL) |
-| Backend | Render web service (`npm start`, set `app.set('trust proxy', 1)` behind the proxy) |
-| Database | MongoDB Atlas M0 |
+**Environment variables**
 
-Set `CLIENT_URL` on the backend to the deployed frontend origin, and allow the host's outbound traffic in Atlas Network Access.
+| Where | Variable | Value |
+|---|---|---|
+| Render | `NODE_ENV` | `production` (enables the strict auth rate limit and `trust proxy`) |
+| Render | `MONGODB_URI`, `JWT_SECRET`, `GITHUB_TOKEN` | Atlas connection string, a random 32+ character secret, a no-scope GitHub token |
+| Render | `CLIENT_URL` | The exact Vercel origin, for example `https://talentmatch.vercel.app` |
+| Vercel | `VITE_API_BASE_URL` | `https://<service>.onrender.com/api` |
+| Vercel | `VITE_SOCKET_URL` | `https://<service>.onrender.com` |
+
+The API refuses to start in production without `JWT_SECRET`, `MONGODB_URI` and `CLIENT_URL`. Render deploys after the `CI` workflow passes.
+
+> The free Render tier sleeps after about 15 minutes without traffic, so the first request can take around a minute. Open `/api/health` before a demo.
 
 ---
 
@@ -596,12 +669,13 @@ Set `CLIENT_URL` on the backend to the deployed frontend origin, and allow the h
 - Recruiters rank and shortlist only students who **applied**; they cannot yet browse non-applicants.
 - Status transitions are not a strict state machine on the server.
 - GitHub data uses the public API with a server token, not GitHub OAuth.
+- The free hosting tier sleeps when idle, so the first request after a pause is slow.
 
 **Roadmap**
 - GitHub OAuth sign-in and richer repository insights
 - Recruiter talent pool of top-matching students who have not applied
 - AI-assisted resume review, skill-gap analysis and interview question generation
-- Dockerised stack and automated CI/CD
+- Automated frontend tests and end-to-end browser tests
 
 ---
 
@@ -609,9 +683,9 @@ Set `CLIENT_URL` on the backend to the deployed frontend origin, and allow the h
 
 **Legend:** ✅ Done and verified in the code · 🟡 Implemented, final verification pending · ⬜ Not started
 
-**Overall: 72 of 103 items verified done (70%)** · 6 implemented, awaiting final verification · 25 not started
+**Overall: 83 of 103 items verified done (81%)** · 8 implemented, awaiting final verification · 12 not started
 
-`██████████████░░░░░░` 70%
+`████████████████░░░░` 81%
 
 | Section | ✅ Done | 🟡 Pending check | ⬜ Not started |
 |---|---|---|---|
@@ -623,11 +697,11 @@ Set `CLIENT_URL` on the backend to the deployed frontend origin, and allow the h
 | 6. Secure REST API | 6 | 0 | 0 |
 | 7. Authentication and Authorization | 10 | 0 | 0 |
 | 8. Real-Time Features | 5 | 0 | 0 |
-| 9. Docker | 0 | 0 | 5 |
-| 10. DevOps and Deployment | 2 | 2 | 6 |
-| 11. Project Quality | 8 | 4 | 2 |
-| 12. Testing | 0 | 0 | 5 |
-| 13. Final Deliverables | 5 | 0 | 6 |
+| 9. Docker | 5 | 0 | 0 |
+| 10. DevOps and Deployment | 4 | 2 | 4 |
+| 11. Project Quality | 10 | 3 | 1 |
+| 12. Testing | 0 | 3 | 2 |
+| 13. Final Deliverables | 7 | 0 | 4 |
 
 ### 1. Frontend Development (React + Tailwind CSS)
 
@@ -731,11 +805,11 @@ Set `CLIENT_URL` on the backend to the deployed frontend origin, and allow the h
 
 | Item | Status | Proof |
 |---|---|---|
-| Dockerfile created | ⬜ | Planned |
-| `.dockerignore` configured | ⬜ | Planned |
-| Application runs inside Docker | ⬜ | Planned |
-| Environment variables configured | ⬜ | Planned |
-| Docker Compose used | ⬜ | Planned (client, server, local Mongo) |
+| Dockerfile created | ✅ | `server/Dockerfile` (multi-stage, non-root, healthcheck) and `client/Dockerfile` (Vite build served by nginx) |
+| `.dockerignore` configured | ✅ | `server/.dockerignore` and `client/.dockerignore` exclude `node_modules`, `.env*`, `dist`, `.git` |
+| Application runs inside Docker | ✅ | The `Docker Compose Integration` CI job builds the images, starts mongo + server + nginx client, and runs the API test suite against `http://localhost:8080` |
+| Environment variables configured | ✅ | `environment:` block in `docker-compose.yml`, placeholders in `.env.docker.example` |
+| Docker Compose used | ✅ | `docker-compose.yml` with `mongo`, `server` and `client` services, healthchecks and a named volume |
 
 ### 10. DevOps and Deployment
 
@@ -745,11 +819,11 @@ Set `CLIENT_URL` on the backend to the deployed frontend origin, and allow the h
 | Backend deployed | ⬜ | Planned: Render |
 | Database connected | ✅ | MongoDB Atlas cluster in use |
 | Environment variables configured | 🟡 | Documented in `.env.example`; to be set on the hosts |
-| Production build successful | 🟡 | `npm run build` produces `client/dist` (re-confirm before release) |
+| Production build successful | ✅ | CI job `Client Lint and Build` runs `npm run build`; the client Docker image builds the same bundle |
 | GitHub repository created | ✅ | This repository |
-| GitHub Actions workflow configured | ⬜ | Planned |
+| GitHub Actions workflow configured | ✅ | `.github/workflows/ci.yml` (three jobs: client, server, Docker Compose) |
 | Automatic deployment enabled | ⬜ | Planned |
-| Build passes successfully | ⬜ | Planned (after the workflow exists) |
+| Build passes successfully | 🟡 | Client and server jobs pass; the Docker job turns green once the Postman suite passes in CI |
 | Deployment to Render / Vercel working | ⬜ | Planned |
 
 ### 11. Project Quality
@@ -760,7 +834,7 @@ Set `CLIENT_URL` on the backend to the deployed frontend origin, and allow the h
 | Clean code | ✅ | Linted client (`oxlint`), layered server, JSDoc on services |
 | Reusable components | ✅ | `components/common/` and shared hooks |
 | Comments where necessary | ✅ | Explanatory comments on access rules, indexes and gating logic |
-| No unused files or code | 🟡 | Boilerplate and the duplicate root `.env.example` are gone; stale duplicate screens remain inside `stitch_talent_match_web_ui.zip` |
+| No unused files or code | ✅ | Boilerplate and duplicate env templates removed; the Stitch export zip is kept on purpose as design evidence |
 | Regular commits | 🟡 | See the commit history |
 | Meaningful commit messages | 🟡 | See the commit history |
 | Feature branches used | 🟡 | See the branch and PR history |
@@ -768,17 +842,17 @@ Set `CLIENT_URL` on the backend to the deployed frontend origin, and allow the h
 | Installation steps | ✅ | [Getting Started](#getting-started) |
 | Project architecture | ✅ | [System Architecture](#system-architecture) and [Data Model](#data-model) |
 | API documentation | ✅ | [API Reference](#api-reference) |
-| Screenshots | ⬜ | Add to `docs/screenshots/` (placeholders above) |
+| Screenshots | ✅ | Seven images in `docs/screenshots/`, shown in [Screenshots](#screenshots) |
 | Deployment links | ⬜ | Add after deployment |
 
 ### 12. Testing (Recommended)
 
 | Item | Status | Proof |
 |---|---|---|
-| API tested using Postman | ⬜ | Collection to be committed under `docs/postman/` |
+| API tested using Postman | 🟡 | `docs/postman/` collection (35 requests, 70 assertions) is run by Newman in CI; green once the latest fix is pushed |
 | Frontend tested | ⬜ | Manual flows in [Demo Walkthrough](#demo-walkthrough); automated tests not added |
-| Error scenarios tested | ⬜ | To be recorded in the Postman collection |
-| Authentication tested | ⬜ | To be recorded in the Postman collection |
+| Error scenarios tested | 🟡 | Collection covers `400` validation and duplicates, `401` bad or missing tokens, `403` role and ownership violations |
+| Authentication tested | 🟡 | Collection covers register, login, `/auth/me`, wrong password, and the recruiter approval gate |
 | Responsive design tested | ⬜ | To be recorded with screenshots at 375, 768 and 1440 px |
 
 ### 13. Final Deliverables
@@ -790,8 +864,8 @@ Set `CLIENT_URL` on the backend to the deployed frontend origin, and allow the h
 | Live backend URL | ⬜ | Pending deployment |
 | API documentation | ✅ | [API Reference](#api-reference) |
 | README.md | ✅ | This file |
-| Dockerfile | ⬜ | Pending |
-| GitHub Actions workflow | ⬜ | Pending |
+| Dockerfile | ✅ | `server/Dockerfile`, `client/Dockerfile`, `docker-compose.yml` |
+| GitHub Actions workflow | ✅ | `.github/workflows/ci.yml` |
 | Database schema | ✅ | [Data Model](#data-model) and `server/models/` |
 | Sample test user | ✅ | [Test accounts](#test-accounts-development-seed-only) created by `npm run seed` |
 | Project presentation (PPT) | ⬜ | Pending |

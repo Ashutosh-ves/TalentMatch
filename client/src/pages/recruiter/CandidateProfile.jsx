@@ -267,11 +267,11 @@ export function CandidateProfile() {
             {user.name || 'Candidate'}
           </h1>
 
-          <p className="font-headline-md text-base md:text-lg text-text-muted">
-            {student.interests && student.interests.length > 0
-              ? student.interests.join(' • ')
-              : 'Software Engineering • Web Applications'}
-          </p>
+          {student.interests && student.interests.length > 0 && (
+            <p className="font-headline-md text-base md:text-lg text-text-muted">
+              {student.interests.join(' • ')}
+            </p>
+          )}
 
           <div className="flex flex-wrap items-center gap-6 font-label-mono text-xs mt-2">
             <span className="flex items-center gap-1.5 text-text-muted">
@@ -397,22 +397,83 @@ export function CandidateProfile() {
 
       {/* Bento Grid: Bio / Availability & Tech Stack / GitHub */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
-        {/* Bio & Availability (Col 1-4) */}
+        {/* About & Availability (Col 1-4) */}
         <div className="md:col-span-4 flex flex-col gap-8">
           <section className="bg-surface-container-lowest border border-border-hairline p-8 rounded-lg flex flex-col justify-between h-full">
             <div>
-              <h2 className="font-headline-md text-lg font-bold border-b border-border-hairline pb-4 mb-4 text-primary">
-                Candidate Bio
+              <h2 className="font-headline-md text-lg font-bold border-b border-border-hairline pb-4 mb-6 text-primary">
+                About
               </h2>
-              <p className="font-body-md text-xs md:text-sm text-text-muted leading-relaxed">
-                Focused engineering candidate active in modern web architectures and distributed
-                backends. Demonstrated history of repository maintenance and team collaboration.
-              </p>
+
+              {/* Interests as Chips */}
+              <div className="mb-6">
+                <h3 className="font-label-mono text-xs text-text-muted mb-3 uppercase tracking-widest">
+                  Interests
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {Array.isArray(student.interests) && student.interests.length > 0 ? (
+                    student.interests.map((interest) => (
+                      <span
+                        key={interest}
+                        className="px-3 py-1 bg-surface-container border border-border-hairline font-label-mono text-xs text-primary"
+                      >
+                        {interest}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-text-muted font-body-md text-xs">
+                      No interests listed
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* LinkedIn / Portfolio Links when present */}
+              {(student.linkedinUrl || student.portfolioUrl) && (
+                <div className="mb-6">
+                  <h3 className="font-label-mono text-xs text-text-muted mb-3 uppercase tracking-widest">
+                    Links
+                  </h3>
+                  <div className="flex flex-col gap-2 font-label-mono text-xs">
+                    {student.linkedinUrl && (
+                      <a
+                        href={
+                          student.linkedinUrl.startsWith('http')
+                            ? student.linkedinUrl
+                            : `https://${student.linkedinUrl}`
+                        }
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1.5 text-text-muted hover:text-match-indicator transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-sm">link</span>
+                        <span>LinkedIn</span>
+                      </a>
+                    )}
+                    {student.portfolioUrl && (
+                      <a
+                        href={
+                          student.portfolioUrl.startsWith('http')
+                            ? student.portfolioUrl
+                            : `https://${student.portfolioUrl}`
+                        }
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1.5 text-text-muted hover:text-match-indicator transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-sm">link</span>
+                        <span>Portfolio</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
+            {/* Availability */}
             <div className="bg-surface-bright p-5 rounded border border-border-hairline mt-6">
               <h3 className="font-label-mono text-xs text-text-muted mb-3 uppercase tracking-widest">
-                Availability Details
+                Availability
               </h3>
               <ul className="flex flex-col gap-3 font-body-md text-xs md:text-sm list-none p-0 m-0">
                 <li className="flex items-center gap-2">
