@@ -4,6 +4,8 @@
 
 ### Skills over resumes. Match students to real projects using what they have actually built.
 
+[![CI](https://github.com/Ashutosh-ves/TalentMatch/actions/workflows/ci.yml/badge.svg)](https://github.com/Ashutosh-ves/TalentMatch/actions/workflows/ci.yml)
+
 ![React](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
 ![Tailwind](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)

@@ -1,0 +1,236 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  client:
+    name: Client Lint and Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: 'client/package-lock.json'
+
+      - name: Install client dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Lint client
+        working-directory: client
+        run: npm run lint
+
+      - name: Build client bundle
+        working-directory: client
+        run: npm run build
+
+  server:
+    name: Server Test and Seed
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval \"db.adminCommand('ping')\""
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --health-start-period 10s
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: 'server/package-lock.json'
+
+      - name: Install server dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Syntax check server files
+        working-directory: server
+        run: find . -name "*.js" -not -path "*/node_modules/*" -exec node --check {} +
+
+      - name: Verify server startup, seed, and authentication
+        working-directory: server
+        env:
+          MONGODB_URI: mongodb://localhost:27017/talentmatch_ci
+          JWT_SECRET: ci-secret-ci-secret-ci-secret-ci-secret
+          NODE_ENV: test
+          CLIENT_URL: http://localhost:5173
+          PORT: 5000
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node server.js &
+          SERVER_PID=$!
+          trap 'kill -TERM "$SERVER_PID" 2>/dev/null || true' EXIT
+
+          echo "Waiting for server health endpoint at http://localhost:5000/api/health..."
+          READY=0
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:5000/api/health > /dev/null; then
+              READY=1
+              echo "Server is healthy (attempt $i)"
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$READY" -ne 1 ]; then
+            echo "Server failed to respond on /api/health within 30 seconds"
+            exit 1
+          fi
+
+          echo "Seeding database..."
+          npm run seed
+
+          echo "Verifying admin authentication..."
+          LOGIN_RES=$(curl -sf -X POST http://localhost:5000/api/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"email":"admin@talentmatch.com","password":"AdminPassword123!"}')
+
+          TOKEN=$(echo "$LOGIN_RES" | node -e "
+            const chunks = [];
+            process.stdin.on('data', c => chunks.push(c));
+            process.stdin.on('end', () => {
+              try {
+                const data = JSON.parse(Buffer.concat(chunks).toString());
+                if (data && data.token && typeof data.token === 'string' && data.token.length > 10) {
+                  process.stdout.write(data.token);
+                } else {
+                  process.exit(1);
+                }
+              } catch (e) {
+                process.exit(1);
+              }
+            });
+          ")
+
+          if [ -z "$TOKEN" ]; then
+            echo "Failed to obtain auth token for admin@talentmatch.com"
+            exit 1
+          fi
+
+          echo "Admin login succeeded and returned valid JWT token."
+
+          echo "Stopping background server..."
+          kill -TERM "$SERVER_PID" 2>/dev/null || true
+          wait "$SERVER_PID" 2>/dev/null || true
+          trap - EXIT
+          echo "Server stopped successfully."
+
+  docker:
+    name: Docker Compose Integration
+    needs: [client, server]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure environment file
+        run: |
+          cp .env.docker.example .env
+          sed -i 's/^JWT_SECRET=.*/JWT_SECRET=ci-docker-secret-ci-docker-secret-32ch/' .env
+
+      - name: Build Docker images
+        run: docker compose build
+
+      - name: Start Docker services
+        run: docker compose up -d
+
+      - name: Wait for services through Nginx proxy
+        run: |
+          echo "Waiting for http://localhost:8080/api/health to answer through nginx..."
+          READY=0
+          for i in $(seq 1 90); do
+            if curl -sf http://localhost:8080/api/health > /dev/null; then
+              READY=1
+              echo "Services healthy via Nginx (attempt $i)"
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$READY" -ne 1 ]; then
+            echo "Services failed to become healthy through nginx within 90s"
+            exit 1
+          fi
+
+      - name: Seed database in container
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          docker compose run --rm -e NODE_ENV=development -e GITHUB_TOKEN="$GITHUB_TOKEN" server npm run seed
+
+      - name: Verify frontend and admin authentication
+        run: |
+          echo "Asserting GET http://localhost:8080/ returns HTML with id=\"root\"..."
+          ROOT_HTML=$(curl -sf http://localhost:8080/)
+          if ! echo "$ROOT_HTML" | grep -q 'id="root"'; then
+            echo "Root HTML did not contain id=\"root\":"
+            echo "$ROOT_HTML"
+            exit 1
+          fi
+          echo "Frontend HTML verified."
+
+          echo "Asserting admin login via http://localhost:8080/api/auth/login..."
+          LOGIN_RES=$(curl -sf -X POST http://localhost:8080/api/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"email":"admin@talentmatch.com","password":"AdminPassword123!"}')
+
+          TOKEN=$(echo "$LOGIN_RES" | node -e "
+            const chunks = [];
+            process.stdin.on('data', c => chunks.push(c));
+            process.stdin.on('end', () => {
+              try {
+                const data = JSON.parse(Buffer.concat(chunks).toString());
+                if (data && data.token && typeof data.token === 'string' && data.token.length > 10) {
+                  process.stdout.write(data.token);
+                } else {
+                  process.exit(1);
+                }
+              } catch (e) {
+                process.exit(1);
+              }
+            });
+          ")
+
+          if [ -z "$TOKEN" ]; then
+            echo "Failed to retrieve valid auth token through Nginx proxy"
+            exit 1
+          fi
+          echo "Admin login via Nginx proxy succeeded and returned valid JWT token."
+
+      - name: Print Docker Compose logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Clean up Docker Compose
+        if: always()
+        run: docker compose down -v
