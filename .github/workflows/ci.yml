@@ -188,6 +188,10 @@ jobs:
         run: |
           docker compose run --rm -e NODE_ENV=development -e GITHUB_TOKEN="$GITHUB_TOKEN" server npm run seed
 
+      - name: Run Postman API tests via Newman
+        run: |
+          npx --yes newman@6 run docs/postman/TalentMatch.postman_collection.json -e docs/postman/ci.postman_environment.json --reporters cli
+
       - name: Verify frontend and admin authentication
         run: |
           echo "Asserting GET http://localhost:8080/ returns HTML with id=\"root\"..."
