@@ -7,6 +7,33 @@ const Message = require('../models/Message');
 const { computeMatch, rankCandidates, recommendOpeningsForStudent } = require('../services/matchService');
 const { attachCompanyName } = require('../utils/attachCompanyName');
 
+/**
+ * Restricts populated `recruiterId` fields to `{ _id, name }` unless the requester
+ * is the opening's owner or an admin.
+ */
+const sanitizeRecruiterVisibility = (openingsOrOne, user) => {
+  if (!openingsOrOne) return openingsOrOne;
+  if (user && user.role === 'admin') return openingsOrOne;
+
+  const list = Array.isArray(openingsOrOne) ? openingsOrOne : [openingsOrOne];
+  const requesterId = user?._id ? user._id.toString() : '';
+
+  for (const opening of list) {
+    if (!opening || !opening.recruiterId || typeof opening.recruiterId !== 'object') {
+      continue;
+    }
+    const ownerId = (opening.recruiterId._id || opening.recruiterId).toString();
+    if (!requesterId || ownerId !== requesterId) {
+      opening.recruiterId = {
+        _id: opening.recruiterId._id,
+        name: opening.recruiterId.name,
+      };
+    }
+  }
+
+  return openingsOrOne;
+};
+
 // @desc    Create a new job opening
 // @route   POST /api/openings
 // @access  Private (Approved Recruiter)
@@ -74,11 +101,15 @@ const getAllOpenings = async (req, res, next) => {
       }
     }
 
+    const populateFields =
+      req.user && req.user.role === 'student' ? 'name' : 'name email role status';
+
     const openings = await Opening.find(query)
-      .populate('recruiterId', 'name email role status')
+      .populate('recruiterId', populateFields)
       .sort({ createdAt: -1 })
       .lean();
 
+    sanitizeRecruiterVisibility(openings, req.user);
     await attachCompanyName(openings);
 
     return res.status(200).json({
@@ -160,6 +191,7 @@ const getOpeningById = async (req, res, next) => {
       }
     }
 
+    sanitizeRecruiterVisibility(opening, req.user);
     await attachCompanyName(opening);
 
     return res.status(200).json({
@@ -386,10 +418,11 @@ const getRecommendedOpenings = async (req, res, next) => {
     const student = await Student.findOne({ userId: req.user._id }).lean();
 
     const activeOpenings = await Opening.find({ status: 'active' })
-      .populate('recruiterId', 'name email role status')
+      .populate('recruiterId', 'name')
       .lean();
 
     const recommendations = recommendOpeningsForStudent(student, activeOpenings);
+    sanitizeRecruiterVisibility(recommendations, req.user);
     await attachCompanyName(recommendations);
 
     return res.status(200).json({

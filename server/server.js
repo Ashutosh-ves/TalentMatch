@@ -1,11 +1,17 @@
 const path = require('path');
 const dotenv = require('dotenv');
 const http = require('http');
+const mongoose = require('mongoose');
 const { Server } = require('socket.io');
 
 // Load environment variables (from server/.env and root .env fallback)
 dotenv.config({ path: path.join(__dirname, '.env') });
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
+
+const validateEnv = require('./config/env');
+
+// Validate required environment variables before connecting to DB
+validateEnv();
 
 const express = require('express');
 const cors = require('cors');
@@ -32,6 +38,17 @@ connectDB();
 
 const app = express();
 const server = http.createServer(app);
+
+// Configure Express trust proxy before rate limiters (defaults to 1 in production, 0 otherwise)
+const rawTrustProxy = process.env.TRUST_PROXY;
+const parsedTrustProxy = Number(rawTrustProxy);
+const trustProxy =
+  rawTrustProxy !== undefined && rawTrustProxy.trim() !== '' && Number.isFinite(parsedTrustProxy)
+    ? parsedTrustProxy
+    : process.env.NODE_ENV === 'production'
+      ? 1
+      : 0;
+app.set('trust proxy', trustProxy);
 
 // CORS origin parsing from CLIENT_URL (comma-separated list, default http://localhost:5173)
 const clientUrlEnv = process.env.CLIENT_URL || 'http://localhost:5173';
@@ -116,5 +133,50 @@ const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+let isShuttingDown = false;
+const gracefulShutdown = async (signal) => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`Received ${signal}. Starting graceful shutdown...`);
+
+  const forceTimer = setTimeout(() => {
+    console.error('Graceful shutdown timed out after 10s; forcing exit.');
+    process.exit(1);
+  }, 10000);
+  forceTimer.unref();
+
+  try {
+    await new Promise((resolve) => {
+      io.close(() => resolve());
+    });
+
+    if (server.listening) {
+      await new Promise((resolve, reject) => {
+        server.close((err) => {
+          if (err && err.code !== 'ERR_SERVER_NOT_RUNNING') {
+            return reject(err);
+          }
+          return resolve();
+        });
+      });
+    }
+
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.connection.close();
+    }
+
+    clearTimeout(forceTimer);
+    console.log('Graceful shutdown complete.');
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during graceful shutdown:', error);
+    clearTimeout(forceTimer);
+    process.exit(1);
+  }
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 module.exports = { app, server, io };

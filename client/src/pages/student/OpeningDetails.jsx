@@ -130,7 +130,6 @@ export function OpeningDetails() {
     opening.recruiterId?.name ||
     'Partner Company';
   const recruiterName = opening.recruiterId?.name || '';
-  const recruiterEmail = opening.recruiterId?.email || '';
 
   const requiredSkills = Array.isArray(opening.requiredSkills) ? opening.requiredSkills : [];
   const matchedSkillSet = new Set(
@@ -301,11 +300,6 @@ export function OpeningDetails() {
           {recruiterName && recruiterName !== companyDisplayName && (
             <p className="font-body-md text-xs text-text-muted mt-0.5">
               Hiring Lead: {recruiterName}
-            </p>
-          )}
-          {recruiterEmail && (
-            <p className="font-body-md text-xs text-text-muted mt-0.5">
-              Contact: {recruiterEmail}
             </p>
           )}
         </div>
