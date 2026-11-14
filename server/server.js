@@ -51,16 +51,39 @@ const trustProxy =
 app.set('trust proxy', trustProxy);
 
 // CORS origin parsing from CLIENT_URL (comma-separated list, default http://localhost:5173)
-const clientUrlEnv = process.env.CLIENT_URL || 'http://localhost:5173';
-const allowedOrigins = clientUrlEnv
+const rawClientUrls = (process.env.CLIENT_URL || 'http://localhost:5173')
   .split(',')
-  .map((origin) => origin.trim())
+  .map((url) => url.trim())
   .filter(Boolean);
+
+const allowedOrigins = Array.from(
+  new Set(
+    rawClientUrls.map((rawUrl) => {
+      try {
+        const parsed = new URL(rawUrl);
+        if (parsed.pathname && parsed.pathname !== '/') {
+          console.warn(
+            `[CORS] Warning: CLIENT_URL entry "${rawUrl}" contains a path ("${parsed.pathname}"). CORS origins must not include paths.`
+          );
+        }
+      } catch (err) {
+        console.warn(`[CORS] Warning: CLIENT_URL entry "${rawUrl}" failed to parse with new URL(): ${err.message}`);
+      }
+      return rawUrl.replace(/\/+$/, '');
+    })
+  )
+);
+
+console.log(`Allowed CORS origins: ${allowedOrigins.join(', ')}`);
 
 const corsOptions = {
   origin: (origin, callback) => {
     // Allow non-browser requests (e.g. server-to-server, curl) or matched origins
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin) {
+      return callback(null, true);
+    }
+    const cleanOrigin = origin.trim().replace(/\/+$/, '');
+    if (allowedOrigins.includes(cleanOrigin)) {
       return callback(null, true);
     }
     return callback(new Error(`Not allowed by CORS: ${origin}`));

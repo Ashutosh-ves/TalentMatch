@@ -147,22 +147,39 @@ export function Register() {
         });
       }
     } catch (err) {
-      const resp = err.response?.data;
-      if (resp?.errors && Array.isArray(resp.errors)) {
-        const newFieldErrors = {};
-        resp.errors.forEach((e) => {
-          if (e.path) newFieldErrors[e.path] = e.msg;
-        });
-        setFieldErrors(newFieldErrors);
+      if (!err.response) {
         setServerError({
-          title: 'Validation failed',
-          message: resp.errors.map((e) => e.msg).join('. '),
+          title: 'Connection error',
+          message: "Can't reach the server. Check your connection and try again in a moment.",
+        });
+      } else if (err.response.status === 429) {
+        setServerError({
+          title: 'Too many attempts',
+          message: 'Too many attempts. Please wait a few minutes.',
+        });
+      } else if (err.response.status >= 500) {
+        setServerError({
+          title: 'Server error',
+          message: 'Something went wrong on our side. Please try again.',
         });
       } else {
-        setServerError({
-          title: 'Registration failed',
-          message: resp?.message || 'Unable to create account. Please try again.',
-        });
+        const resp = err.response?.data;
+        if (resp?.errors && Array.isArray(resp.errors)) {
+          const newFieldErrors = {};
+          resp.errors.forEach((e) => {
+            if (e.path) newFieldErrors[e.path] = e.msg;
+          });
+          setFieldErrors(newFieldErrors);
+          setServerError({
+            title: 'Validation failed',
+            message: resp.errors.map((e) => e.msg).join('. '),
+          });
+        } else {
+          setServerError({
+            title: 'Registration failed',
+            message: resp?.message || 'Unable to create account. Please try again.',
+          });
+        }
       }
     } finally {
       setIsSubmitting(false);

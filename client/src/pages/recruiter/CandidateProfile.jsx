@@ -482,10 +482,29 @@ export function CandidateProfile() {
                   </span>
                   <span>{formatAvailability(student.availability)}</span>
                 </li>
-                {student.availability && (
-                  <li className="flex items-center gap-2 text-text-muted">
-                    <span className="material-symbols-outlined text-sm">schedule</span>
-                    <span>Preference: {student.availability}</span>
+                {opening?.availabilityNeeds && (
+                  <li className="flex items-center gap-2 text-xs">
+                    {student.availability &&
+                    student.availability.trim().toLowerCase() ===
+                      opening.availabilityNeeds.trim().toLowerCase() ? (
+                      <>
+                        <span className="material-symbols-outlined text-sm text-match-indicator">
+                          task_alt
+                        </span>
+                        <span className="text-on-surface">
+                          Matches opening need ({opening.availabilityNeeds})
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="material-symbols-outlined text-sm text-text-muted">
+                          info
+                        </span>
+                        <span className="text-text-muted">
+                          Does not match opening need ({opening.availabilityNeeds})
+                        </span>
+                      </>
+                    )}
                   </li>
                 )}
               </ul>

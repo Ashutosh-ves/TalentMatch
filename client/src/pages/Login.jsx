@@ -116,23 +116,45 @@ export function Login() {
         });
       }
     } catch (err) {
-      const resp = err.response?.data;
-      if (resp?.errors && Array.isArray(resp.errors)) {
-        // Validation errors from express-validator
-        const newFieldErrors = {};
-        resp.errors.forEach((e) => {
-          if (e.path) newFieldErrors[e.path] = e.msg;
-        });
-        setFieldErrors(newFieldErrors);
+      if (!err.response) {
         setServerError({
-          title: 'Validation failed',
-          message: resp.errors.map((e) => e.msg).join('. '),
+          title: 'Connection error',
+          message: "Can't reach the server. Check your connection and try again in a moment.",
         });
-      } else {
+      } else if (err.response.status === 429) {
+        setServerError({
+          title: 'Too many attempts',
+          message: 'Too many attempts. Please wait a few minutes.',
+        });
+      } else if (err.response.status >= 500) {
+        setServerError({
+          title: 'Server error',
+          message: 'Something went wrong on our side. Please try again.',
+        });
+      } else if (err.response.status === 401) {
         setServerError({
           title: 'Invalid credentials.',
-          message: resp?.message || 'Please try again or reset your password.',
+          message: err.response.data?.message || 'Invalid email or password.',
         });
+      } else {
+        const resp = err.response?.data;
+        if (resp?.errors && Array.isArray(resp.errors)) {
+          // Validation errors from express-validator
+          const newFieldErrors = {};
+          resp.errors.forEach((e) => {
+            if (e.path) newFieldErrors[e.path] = e.msg;
+          });
+          setFieldErrors(newFieldErrors);
+          setServerError({
+            title: 'Validation failed',
+            message: resp.errors.map((e) => e.msg).join('. '),
+          });
+        } else {
+          setServerError({
+            title: 'Unable to log in',
+            message: resp?.message || 'Please check your credentials and try again.',
+          });
+        }
       }
     } finally {
       setIsSubmitting(false);

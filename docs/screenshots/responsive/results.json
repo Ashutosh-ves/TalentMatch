@@ -1,0 +1,122 @@
+[
+  {
+    "page": "landing",
+    "targetWidth": 375,
+    "clientWidth": 375,
+    "scrollWidth": 375,
+    "hasOverflow": false,
+    "overflowDelta": 0,
+    "file": "landing-375.png",
+    "fileSizeBytes": 34352
+  },
+  {
+    "page": "landing",
+    "targetWidth": 768,
+    "clientWidth": 768,
+    "scrollWidth": 768,
+    "hasOverflow": false,
+    "overflowDelta": 0,
+    "file": "landing-768.png",
+    "fileSizeBytes": 45334
+  },
+  {
+    "page": "landing",
+    "targetWidth": 1440,
+    "clientWidth": 1440,
+    "scrollWidth": 1440,
+    "hasOverflow": false,
+    "overflowDelta": 0,
+    "file": "landing-1440.png",
+    "fileSizeBytes": 46957
+  },
+  {
+    "page": "student-dashboard",
+    "targetWidth": 375,
+    "clientWidth": 375,
+    "scrollWidth": 375,
+    "hasOverflow": false,
+    "overflowDelta": 0,
+    "file": "student-dashboard-375.png",
+    "fileSizeBytes": 35628
+  },
+  {
+    "page": "student-dashboard",
+    "targetWidth": 768,
+    "clientWidth": 753,
+    "scrollWidth": 753,
+    "hasOverflow": false,
+    "overflowDelta": 0,
+    "file": "student-dashboard-768.png",
+    "fileSizeBytes": 58204
+  },
+  {
+    "page": "student-dashboard",
+    "targetWidth": 1440,
+    "clientWidth": 1425,
+    "scrollWidth": 1425,
+    "hasOverflow": false,
+    "overflowDelta": 0,
+    "file": "student-dashboard-1440.png",
+    "fileSizeBytes": 107299
+  },
+  {
+    "page": "opening-candidates",
+    "targetWidth": 375,
+    "clientWidth": 375,
+    "scrollWidth": 435,
+    "hasOverflow": true,
+    "overflowDelta": 60,
+    "file": "opening-candidates-375.png",
+    "fileSizeBytes": 43096
+  },
+  {
+    "page": "opening-candidates",
+    "targetWidth": 768,
+    "clientWidth": 753,
+    "scrollWidth": 753,
+    "hasOverflow": false,
+    "overflowDelta": 0,
+    "file": "opening-candidates-768.png",
+    "fileSizeBytes": 76226
+  },
+  {
+    "page": "opening-candidates",
+    "targetWidth": 1440,
+    "clientWidth": 1425,
+    "scrollWidth": 1425,
+    "hasOverflow": false,
+    "overflowDelta": 0,
+    "file": "opening-candidates-1440.png",
+    "fileSizeBytes": 79095
+  },
+  {
+    "page": "admin-dashboard",
+    "targetWidth": 375,
+    "clientWidth": 375,
+    "scrollWidth": 375,
+    "hasOverflow": false,
+    "overflowDelta": 0,
+    "file": "admin-dashboard-375.png",
+    "fileSizeBytes": 46347
+  },
+  {
+    "page": "admin-dashboard",
+    "targetWidth": 768,
+    "clientWidth": 753,
+    "scrollWidth": 753,
+    "hasOverflow": false,
+    "overflowDelta": 0,
+    "file": "admin-dashboard-768.png",
+    "fileSizeBytes": 93698
+  },
+  {
+    "page": "admin-dashboard",
+    "targetWidth": 1440,
+    "clientWidth": 1425,
+    "scrollWidth": 1425,
+    "hasOverflow": false,
+    "overflowDelta": 0,
+    "file": "admin-dashboard-1440.png",
+    "fileSizeBytes": 110221
+  }
+]

@@ -14,6 +14,8 @@
 ![Socket.IO](https://img.shields.io/badge/Socket.IO-4-010101?logo=socketdotio&logoColor=white)
 ![JWT](https://img.shields.io/badge/Auth-JWT-FB015B?logo=jsonwebtokens&logoColor=white)
 
+**Live app:** [talent-match-sage.vercel.app](https://talent-match-sage.vercel.app) · **API:** [talentmatch-wh9o.onrender.com](https://talentmatch-wh9o.onrender.com)
+
 </div>
 
 ---
@@ -646,6 +648,8 @@ Tokens are defined once in `client/src/index.css` under `@theme` and consumed as
 | Backend | Render web service, Docker runtime | Root directory `server`; the same image CI builds; health check path `/api/health` |
 | Database | MongoDB Atlas M0 | Network Access must allow Render (`0.0.0.0/0`) |
 
+**Live deployment:** frontend at https://talent-match-sage.vercel.app, API at https://talentmatch-wh9o.onrender.com (health check: `https://talentmatch-wh9o.onrender.com/api/health`).
+
 **Environment variables**
 
 | Where | Variable | Value |
@@ -683,9 +687,9 @@ The API refuses to start in production without `JWT_SECRET`, `MONGODB_URI` and `
 
 **Legend:** ✅ Done and verified in the code · 🟡 Implemented, final verification pending · ⬜ Not started
 
-**Overall: 83 of 103 items verified done (81%)** · 8 implemented, awaiting final verification · 12 not started
+**Overall: 95 of 103 items verified done (92%)** · 3 implemented, awaiting final verification · 5 not started
 
-`████████████████░░░░` 81%
+`██████████████████░░` 92%
 
 | Section | ✅ Done | 🟡 Pending check | ⬜ Not started |
 |---|---|---|---|
@@ -698,10 +702,10 @@ The API refuses to start in production without `JWT_SECRET`, `MONGODB_URI` and `
 | 7. Authentication and Authorization | 10 | 0 | 0 |
 | 8. Real-Time Features | 5 | 0 | 0 |
 | 9. Docker | 5 | 0 | 0 |
-| 10. DevOps and Deployment | 4 | 2 | 4 |
-| 11. Project Quality | 10 | 3 | 1 |
-| 12. Testing | 0 | 3 | 2 |
-| 13. Final Deliverables | 7 | 0 | 4 |
+| 10. DevOps and Deployment | 10 | 0 | 0 |
+| 11. Project Quality | 11 | 3 | 0 |
+| 12. Testing | 3 | 0 | 2 |
+| 13. Final Deliverables | 9 | 0 | 2 |
 
 ### 1. Frontend Development (React + Tailwind CSS)
 
@@ -815,16 +819,16 @@ The API refuses to start in production without `JWT_SECRET`, `MONGODB_URI` and `
 
 | Item | Status | Proof |
 |---|---|---|
-| Frontend deployed | ⬜ | Planned: Vercel |
-| Backend deployed | ⬜ | Planned: Render |
+| Frontend deployed | ✅ | Vercel: https://talent-match-sage.vercel.app |
+| Backend deployed | ✅ | Render (Docker runtime): https://talentmatch-wh9o.onrender.com; `GET /` returns the API status JSON |
 | Database connected | ✅ | MongoDB Atlas cluster in use |
-| Environment variables configured | 🟡 | Documented in `.env.example`; to be set on the hosts |
+| Environment variables configured | ✅ | Set in the Render and Vercel dashboards as listed in [Deployment](#deployment); templates in `server/.env.example`, `client/.env.example` |
 | Production build successful | ✅ | CI job `Client Lint and Build` runs `npm run build`; the client Docker image builds the same bundle |
 | GitHub repository created | ✅ | This repository |
 | GitHub Actions workflow configured | ✅ | `.github/workflows/ci.yml` (three jobs: client, server, Docker Compose) |
-| Automatic deployment enabled | ⬜ | Planned |
-| Build passes successfully | 🟡 | Client and server jobs pass; the Docker job turns green once the Postman suite passes in CI |
-| Deployment to Render / Vercel working | ⬜ | Planned |
+| Automatic deployment enabled | ✅ | Render auto-deploys only after the `CI` workflow passes; Vercel deploys on every push to `main` |
+| Build passes successfully | ✅ | `CI` badge at the top; Render only deploys after all three CI jobs (client, server, Docker + Postman) pass |
+| Deployment to Render / Vercel working | ✅ | Live URLs above; login, API and WebSocket traffic work across the two origins |
 
 ### 11. Project Quality
 
@@ -843,16 +847,16 @@ The API refuses to start in production without `JWT_SECRET`, `MONGODB_URI` and `
 | Project architecture | ✅ | [System Architecture](#system-architecture) and [Data Model](#data-model) |
 | API documentation | ✅ | [API Reference](#api-reference) |
 | Screenshots | ✅ | Seven images in `docs/screenshots/`, shown in [Screenshots](#screenshots) |
-| Deployment links | ⬜ | Add after deployment |
+| Deployment links | ✅ | Live app and API links at the top of this README |
 
 ### 12. Testing (Recommended)
 
 | Item | Status | Proof |
 |---|---|---|
-| API tested using Postman | 🟡 | `docs/postman/` collection (35 requests, 70 assertions) is run by Newman in CI; green once the latest fix is pushed |
+| API tested using Postman | ✅ | `docs/postman/` collection (35 requests, 70 assertions) runs in CI with Newman and gates every deployment |
 | Frontend tested | ⬜ | Manual flows in [Demo Walkthrough](#demo-walkthrough); automated tests not added |
-| Error scenarios tested | 🟡 | Collection covers `400` validation and duplicates, `401` bad or missing tokens, `403` role and ownership violations |
-| Authentication tested | 🟡 | Collection covers register, login, `/auth/me`, wrong password, and the recruiter approval gate |
+| Error scenarios tested | ✅ | Collection covers `400` validation and duplicates, `401` bad or missing tokens, `403` role and ownership violations |
+| Authentication tested | ✅ | Collection covers register, login, `/auth/me`, wrong password, and the recruiter approval gate |
 | Responsive design tested | ⬜ | To be recorded with screenshots at 375, 768 and 1440 px |
 
 ### 13. Final Deliverables
@@ -860,8 +864,8 @@ The API refuses to start in production without `JWT_SECRET`, `MONGODB_URI` and `
 | Item | Status | Proof |
 |---|---|---|
 | GitHub repository | ✅ | This repository |
-| Live frontend URL | ⬜ | Pending deployment |
-| Live backend URL | ⬜ | Pending deployment |
+| Live frontend URL | ✅ | https://talent-match-sage.vercel.app |
+| Live backend URL | ✅ | https://talentmatch-wh9o.onrender.com |
 | API documentation | ✅ | [API Reference](#api-reference) |
 | README.md | ✅ | This file |
 | Dockerfile | ✅ | `server/Dockerfile`, `client/Dockerfile`, `docker-compose.yml` |

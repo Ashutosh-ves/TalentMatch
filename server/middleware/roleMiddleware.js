@@ -16,9 +16,14 @@ const roleMiddleware = (...allowedRoles) => {
 
     // For recruiter posting/sensitive actions, also enforce status === 'approved'
     if (req.user.role === 'recruiter' && req.user.status !== 'approved') {
+      const message =
+        req.user.status === 'rejected'
+          ? 'Forbidden: Recruiter account was rejected'
+          : 'Forbidden: Recruiter account status is pending approval';
+
       return res.status(403).json({
         success: false,
-        message: 'Forbidden: Recruiter account status is pending approval',
+        message,
       });
     }
 

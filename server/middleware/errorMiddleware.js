@@ -2,6 +2,13 @@ const errorMiddleware = (err, req, res, next) => {
   // Log method, URL and error message/details (strictly never log request bodies)
   console.error(`[${req.method}] ${req.originalUrl || req.url} - Error:`, err.message || err);
 
+  if (err.message && typeof err.message === 'string' && err.message.startsWith('Not allowed by CORS')) {
+    return res.status(403).json({
+      success: false,
+      message: 'Origin not allowed',
+    });
+  }
+
   let statusCode = err.statusCode || (res.statusCode && res.statusCode !== 200 ? res.statusCode : 500);
   let message = err.message || 'Internal Server Error';
 
