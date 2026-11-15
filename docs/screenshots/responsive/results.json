@@ -63,9 +63,9 @@
     "page": "opening-candidates",
     "targetWidth": 375,
     "clientWidth": 375,
-    "scrollWidth": 435,
-    "hasOverflow": true,
-    "overflowDelta": 60,
+    "scrollWidth": 375,
+    "hasOverflow": false,
+    "overflowDelta": 0,
     "file": "opening-candidates-375.png",
     "fileSizeBytes": 43096
   },

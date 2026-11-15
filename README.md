@@ -226,7 +226,8 @@ TalentMatch/
 │   │   │   ├── recruiter/          # RecruiterDashboard, PostEditOpening, OpeningCandidates, CandidateProfile
 │   │   │   └── admin/              # AdminDashboard
 │   │   ├── services/               # api.js (Axios) + one service per API resource
-│   │   └── utils/                  # role helpers
+│   │   ├── utils/                  # role helpers
+│   │   └── test/                   # Vitest unit and component tests
 │   ├── Dockerfile  nginx.conf      # Production image: Vite build served by nginx (proxies /api and /socket.io)
 │   └── vercel.json                 # SPA rewrite for Vercel
 ├── server/                         # Express REST API + Socket.IO
@@ -243,8 +244,9 @@ TalentMatch/
 │   └── server.js                   # App entry point
 ├── docs/
 │   ├── postman/                    # Postman collection + environments (run in CI with Newman)
-│   ├── screenshots/                # Images used in this README
-│   └── DOCKER.md                   # Docker usage notes
+│   ├── screenshots/                # Images used in this README (+ responsive/ viewport captures)
+│   ├── DOCKER.md                   # Docker usage notes
+│   └── TESTING.md                  # Role/route matrix, responsive results, test suites
 ├── .github/workflows/ci.yml        # CI: lint, build, boot, Docker Compose, API tests
 ├── docker-compose.yml              # mongo + server + client (nginx)
 ├── .env.docker.example             # Variables for Docker Compose
@@ -594,9 +596,19 @@ More detail in [`docs/DOCKER.md`](docs/DOCKER.md).
 
 | Job | What it proves |
 |---|---|
-| **Client Lint and Build** | `npm ci`, `npm run lint`, `npm run build` on Node 22 |
+| **Client Lint, Test and Build** | `npm ci`, `npm run lint`, `npm test` (17 Vitest tests), `npm run build` on Node 22 |
 | **Server Test and Seed** | Syntax check of every server file, boots the API against a Mongo service container, seeds it, and logs in as admin |
 | **Docker Compose Integration** | Builds both images, starts the full stack, waits for `/api/health` through nginx, seeds, runs the Postman suite with Newman, checks the served HTML and an admin login through the proxy |
+
+### Frontend unit tests (Vitest)
+
+17 tests cover the pieces most likely to break: the accessible `ConfirmDialog` (Esc, backdrop, focus return), `ProtectedRoute` redirects, the `useDebounce` hook, the `MatchBreakdown` rendering, the mobile navigation drawer, and the honest login error messages.
+
+```bash
+npm --prefix client test
+```
+
+Test strategy, the role and route access matrix, and the responsive viewport results are documented in [`docs/TESTING.md`](docs/TESTING.md).
 
 ### API tests (Postman / Newman)
 
@@ -687,9 +699,9 @@ The API refuses to start in production without `JWT_SECRET`, `MONGODB_URI` and `
 
 **Legend:** ✅ Done and verified in the code · 🟡 Implemented, final verification pending · ⬜ Not started
 
-**Overall: 95 of 103 items verified done (92%)** · 3 implemented, awaiting final verification · 5 not started
+**Overall: 98 of 102 items verified done (96%)** · 1 implemented, awaiting final verification · 3 not started
 
-`██████████████████░░` 92%
+`███████████████████░` 96%
 
 | Section | ✅ Done | 🟡 Pending check | ⬜ Not started |
 |---|---|---|---|
@@ -703,9 +715,9 @@ The API refuses to start in production without `JWT_SECRET`, `MONGODB_URI` and `
 | 8. Real-Time Features | 5 | 0 | 0 |
 | 9. Docker | 5 | 0 | 0 |
 | 10. DevOps and Deployment | 10 | 0 | 0 |
-| 11. Project Quality | 11 | 3 | 0 |
-| 12. Testing | 3 | 0 | 2 |
-| 13. Final Deliverables | 9 | 0 | 2 |
+| 11. Project Quality | 13 | 0 | 1 |
+| 12. Testing | 4 | 1 | 0 |
+| 13. Final Deliverables | 9 | 0 | 1 |
 
 ### 1. Frontend Development (React + Tailwind CSS)
 
@@ -839,9 +851,9 @@ The API refuses to start in production without `JWT_SECRET`, `MONGODB_URI` and `
 | Reusable components | ✅ | `components/common/` and shared hooks |
 | Comments where necessary | ✅ | Explanatory comments on access rules, indexes and gating logic |
 | No unused files or code | ✅ | Boilerplate and duplicate env templates removed; the Stitch export zip is kept on purpose as design evidence |
-| Regular commits | 🟡 | See the commit history |
-| Meaningful commit messages | 🟡 | See the commit history |
-| Feature branches used | 🟡 | See the branch and PR history |
+| Regular commits | ✅ | Commit history of this repository on GitHub |
+| Meaningful commit messages | ✅ | Commit history of this repository on GitHub |
+| Feature branches used | ⬜ | Pull requests from the final changes onward |
 | README completed | ✅ | This document |
 | Installation steps | ✅ | [Getting Started](#getting-started) |
 | Project architecture | ✅ | [System Architecture](#system-architecture) and [Data Model](#data-model) |
@@ -854,10 +866,10 @@ The API refuses to start in production without `JWT_SECRET`, `MONGODB_URI` and `
 | Item | Status | Proof |
 |---|---|---|
 | API tested using Postman | ✅ | `docs/postman/` collection (35 requests, 70 assertions) runs in CI with Newman and gates every deployment |
-| Frontend tested | ⬜ | Manual flows in [Demo Walkthrough](#demo-walkthrough); automated tests not added |
+| Frontend tested | ✅ | 17 Vitest component and hook tests in `client/src/test/`, run in CI before every build; manual flows in [Demo Walkthrough](#demo-walkthrough) and `docs/TESTING.md` |
 | Error scenarios tested | ✅ | Collection covers `400` validation and duplicates, `401` bad or missing tokens, `403` role and ownership violations |
 | Authentication tested | ✅ | Collection covers register, login, `/auth/me`, wrong password, and the recruiter approval gate |
-| Responsive design tested | ⬜ | To be recorded with screenshots at 375, 768 and 1440 px |
+| Responsive design tested | 🟡 | `docs/TESTING.md`: 12 measurements at 375, 768 and 1440 px with screenshots in `docs/screenshots/responsive/`; one overflow (candidates page at 375 px) is being fixed |
 
 ### 13. Final Deliverables
 
@@ -873,7 +885,6 @@ The API refuses to start in production without `JWT_SECRET`, `MONGODB_URI` and `
 | Database schema | ✅ | [Data Model](#data-model) and `server/models/` |
 | Sample test user | ✅ | [Test accounts](#test-accounts-development-seed-only) created by `npm run seed` |
 | Project presentation (PPT) | ⬜ | Pending |
-| Demo video (optional) | ⬜ | Optional |
 
 ---
 
