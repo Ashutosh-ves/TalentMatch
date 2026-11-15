@@ -699,9 +699,9 @@ The API refuses to start in production without `JWT_SECRET`, `MONGODB_URI` and `
 
 **Legend:** ✅ Done and verified in the code · 🟡 Implemented, final verification pending · ⬜ Not started
 
-**Overall: 98 of 102 items verified done (96%)** · 1 implemented, awaiting final verification · 3 not started
+**Overall: 100 of 102 items verified done (98%)** · 0 implemented, awaiting final verification · 2 not started
 
-`███████████████████░` 96%
+`████████████████████` 98%
 
 | Section | ✅ Done | 🟡 Pending check | ⬜ Not started |
 |---|---|---|---|
@@ -715,8 +715,8 @@ The API refuses to start in production without `JWT_SECRET`, `MONGODB_URI` and `
 | 8. Real-Time Features | 5 | 0 | 0 |
 | 9. Docker | 5 | 0 | 0 |
 | 10. DevOps and Deployment | 10 | 0 | 0 |
-| 11. Project Quality | 13 | 0 | 1 |
-| 12. Testing | 4 | 1 | 0 |
+| 11. Project Quality | 14 | 0 | 0 |
+| 12. Testing | 5 | 0 | 0 |
 | 13. Final Deliverables | 9 | 0 | 1 |
 
 ### 1. Frontend Development (React + Tailwind CSS)
@@ -853,7 +853,7 @@ The API refuses to start in production without `JWT_SECRET`, `MONGODB_URI` and `
 | No unused files or code | ✅ | Boilerplate and duplicate env templates removed; the Stitch export zip is kept on purpose as design evidence |
 | Regular commits | ✅ | Commit history of this repository on GitHub |
 | Meaningful commit messages | ✅ | Commit history of this repository on GitHub |
-| Feature branches used | ⬜ | Pull requests from the final changes onward |
+| Feature branches used | ✅ | Branch and pull request history of this repository on GitHub (each PR runs the `CI` workflow before merge) |
 | README completed | ✅ | This document |
 | Installation steps | ✅ | [Getting Started](#getting-started) |
 | Project architecture | ✅ | [System Architecture](#system-architecture) and [Data Model](#data-model) |
@@ -869,7 +869,7 @@ The API refuses to start in production without `JWT_SECRET`, `MONGODB_URI` and `
 | Frontend tested | ✅ | 17 Vitest component and hook tests in `client/src/test/`, run in CI before every build; manual flows in [Demo Walkthrough](#demo-walkthrough) and `docs/TESTING.md` |
 | Error scenarios tested | ✅ | Collection covers `400` validation and duplicates, `401` bad or missing tokens, `403` role and ownership violations |
 | Authentication tested | ✅ | Collection covers register, login, `/auth/me`, wrong password, and the recruiter approval gate |
-| Responsive design tested | 🟡 | `docs/TESTING.md`: 12 measurements at 375, 768 and 1440 px with screenshots in `docs/screenshots/responsive/`; one overflow (candidates page at 375 px) is being fixed |
+| Responsive design tested | ✅ | `docs/TESTING.md`: 12 measurements at 375, 768 and 1440 px (no horizontal overflow after the candidates-page fix) and captures in `docs/screenshots/responsive/` |
 
 ### 13. Final Deliverables
 
