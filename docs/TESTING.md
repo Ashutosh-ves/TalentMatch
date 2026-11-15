@@ -14,28 +14,27 @@ Talent Match implements role-based access control (RBAC) across both frontend na
 - **Approved Recruiter**: Full access to recruiter dashboard, opening creation/management, candidate rankings, and interview chat for shortlisted candidates. Direct access to student or admin routes redirects to `/recruiter/dashboard`.
 - **Pending Recruiter**: Access to recruiter interface is restricted. Read access to dashboard shows pending-approval status. Opening creation and posting attempts return HTTP `403` with exact message: `"Forbidden: Recruiter account status is pending approval"`.
 - **Rejected Recruiter**: Access to posting and sensitive recruiter operations returns HTTP `403` with exact message: `"Forbidden: Recruiter account was rejected"`.
-- **Admin**: Full access to administrative oversight, recruiter verification queues (`/admin/dashboard`, `/admin/recruiters`), and platform audit controls. Access to student or recruiter-specific operational views redirects to `/admin/dashboard`.
+- **Admin**: Access to the recruiter verification queue (`/admin/dashboard`), where pending recruiters are approved or rejected. Student and recruiter pages redirect to `/admin/dashboard`. The shared `/chat` page opens but lists no conversations.
 
 ### Route Permission Matrix
 
 | Route Path | Public / Guest | Student | Pending Recruiter | Approved Recruiter | Admin | Behavior When Denied |
 |---|:---:|:---:|:---:|:---:|:---:|---|
 | `/` (Landing Page) | Allowed | Allowed | Allowed | Allowed | Allowed | N/A |
-| `/login` | Allowed | Redirects* | Redirects* | Redirects* | Redirects* | Authenticated users redirect to own dashboard (`getRoleDashboard`) |
-| `/register` | Allowed | Redirects* | Redirects* | Redirects* | Redirects* | Authenticated users redirect to own dashboard |
+| `/login` | Allowed | Redirects* | Redirects* | Redirects* | Redirects* | Authenticated users redirect to their own dashboard (`getRoleDashboard`) |
+| `/register` | Allowed | Allowed | Allowed | Allowed | Allowed | No redirect for signed-in users (only `/login` redirects) |
 | `/student/dashboard` | Denied | **Allowed** | Denied | Denied | Denied | Guest -> `/login`; others -> own role dashboard |
 | `/student/profile` | Denied | **Allowed** | Denied | Denied | Denied | Guest -> `/login`; others -> own role dashboard |
 | `/student/applications` | Denied | **Allowed** | Denied | Denied | Denied | Guest -> `/login`; others -> own role dashboard |
-| `/openings/:id` (Detail) | Denied | **Allowed** | Denied | Denied | Denied | Guest -> `/login`; recruiter views via recruiter dashboard |
+| `/student/openings/:id` (Detail) | Denied | **Allowed** | Denied | Denied | Denied | Guest -> `/login`; others -> own role dashboard |
 | `/recruiter/dashboard` | Denied | Denied | **Allowed** (Pending banner) | **Allowed** | Denied | Guest -> `/login`; others -> own role dashboard |
-| `/recruiter/openings/new` | Denied | Denied | **Blocked** (403 Pending) | **Allowed** | Denied | Guest -> `/login`; pending recruiter receives 403 API block |
+| `/recruiter/openings/new` and `/recruiter/openings/:id/edit` | Denied | Denied | **Blocked** (403 Pending) | **Allowed** | Denied | Guest -> `/login`; pending recruiter receives 403 from the API on save |
 | `/recruiter/openings/:id/candidates` | Denied | Denied | **Blocked** (403 Pending) | **Allowed** (Own opening) | Denied | Guest -> `/login`; others -> own role dashboard |
 | `/recruiter/candidates/:id` | Denied | Denied | **Blocked** (403 Pending) | **Allowed** | Denied | Guest -> `/login`; others -> own role dashboard |
 | `/admin/dashboard` | Denied | Denied | Denied | Denied | **Allowed** | Guest -> `/login`; others -> own role dashboard |
-| `/admin/recruiters` | Denied | Denied | Denied | Denied | **Allowed** | Guest -> `/login`; others -> own role dashboard |
-| `/chat` / `/chat/:applicationId` | Denied | **Allowed** (Own chat) | Denied | **Allowed** (Shortlisted) | Denied | Guest -> `/login`; non-shortlisted applications blocked (403) |
+| `/chat` / `/chat/:applicationId` | Denied | **Allowed** (own shortlisted/accepted chats) | Allowed (no conversations) | **Allowed** (shortlisted/accepted chats) | Allowed (no conversations) | Guest -> `/login`; the API returns 403 for chats of applications that are not shortlisted or accepted |
 
-*\* Authenticated users visiting `/login` or `/register` are automatically redirected to their role-specific dashboard.*
+*\* Authenticated users visiting `/login` are automatically redirected to their role-specific dashboard.*
 
 ---
 
@@ -53,7 +52,7 @@ All target views were tested across three standard responsive widths (**375px** 
 | **Student Dashboard** | 375 px | 375 px | 375 px | **No** (0 px) | [`docs/screenshots/responsive/student-dashboard-375.png`](screenshots/responsive/student-dashboard-375.png) |
 | **Student Dashboard** | 768 px | 753 px\* | 753 px | **No** (0 px) | [`docs/screenshots/responsive/student-dashboard-768.png`](screenshots/responsive/student-dashboard-768.png) |
 | **Student Dashboard** | 1440 px | 1425 px\* | 1425 px | **No** (0 px) | [`docs/screenshots/responsive/student-dashboard-1440.png`](screenshots/responsive/student-dashboard-1440.png) |
-| **Opening Candidates** | 375 px | 375 px | 435 px | **YES (+60 px)** | [`docs/screenshots/responsive/opening-candidates-375.png`](screenshots/responsive/opening-candidates-375.png) |
+| **Opening Candidates** | 375 px | 375 px | 375 px | **No** (0 px) | [`docs/screenshots/responsive/opening-candidates-375.png`](screenshots/responsive/opening-candidates-375.png) |
 | **Opening Candidates** | 768 px | 753 px\* | 753 px | **No** (0 px) | [`docs/screenshots/responsive/opening-candidates-768.png`](screenshots/responsive/opening-candidates-768.png) |
 | **Opening Candidates** | 1440 px | 1425 px\* | 1425 px | **No** (0 px) | [`docs/screenshots/responsive/opening-candidates-1440.png`](screenshots/responsive/opening-candidates-1440.png) |
 | **Admin Dashboard** | 375 px | 375 px | 375 px | **No** (0 px) | [`docs/screenshots/responsive/admin-dashboard-375.png`](screenshots/responsive/admin-dashboard-375.png) |
@@ -63,8 +62,11 @@ All target views were tested across three standard responsive widths (**375px** 
 *\* Note: `clientWidth` reflects viewport width minus the browser vertical scrollbar (15px on Windows Chromium).*
 
 ### Horizontal Overflow Diagnosis
-- **Identified Overflow**: Opening Candidates view at 375px viewport exhibits **+60px** of horizontal overflow (`scrollWidth: 435px` vs `clientWidth: 375px`).
-- **Root Cause**: In [`client/src/pages/recruiter/OpeningCandidates.jsx`](../client/src/pages/recruiter/OpeningCandidates.jsx), the candidate action buttons container (`<div className="flex flex-row md:flex-col gap-2.5 ...">`) renders three to four buttons (`Shortlist`, `Reject`, `Profile →`, and conditionally `Chat`) side-by-side on mobile viewports without flex wrapping (`flex-wrap`). The combined min-widths and padding of the action buttons exceed the 375px container width.
+- **Status**: **Fixed** (0 px overflow).
+- **Previous Overflow**: Opening Candidates view at 375px viewport previously exhibited **+60px** of horizontal overflow (`scrollWidth: 435px` vs `clientWidth: 375px`).
+- **Root Cause**: In [`client/src/pages/recruiter/OpeningCandidates.jsx`](../client/src/pages/recruiter/OpeningCandidates.jsx) (candidate action container around line 367), the action buttons (`Shortlist`, `Reject`, `Profile →`, and conditionally `Chat`) were arranged in a flex row with `shrink-0` and without flex wrapping, causing button widths and padding to push the viewport width to 435px on narrow screens.
+- **Change Made**: Updated the action button container to `flex flex-row flex-wrap md:flex-nowrap md:flex-col gap-2.5 md:shrink-0 md:w-36 md:pl-6 border-t md:border-t-0 border-border-hairline pt-4 md:pt-0`. This allows the action buttons to wrap cleanly on mobile screens while applying `shrink-0` and `flex-col` only from `md` upwards (preserving identical desktop and tablet appearance).
+- **New Measurement**: At 375px viewport width, `clientWidth` is 375 px and `scrollWidth` is 375 px (overflow delta: 0 px, **No overflow**).
 
 ---
 
@@ -91,9 +93,9 @@ A 35-request, 70-assertion Postman collection tests the backend REST API, role-b
 1. **Health & Auth**: Endpoint health verification, recruiter registration, validation error mapping, duplicate email detection, admin/recruiter/student logins, and `/auth/me`.
 2. **Admin Operations**: Pending recruiter posting restrictions (HTTP 403), administrative recruiter approval workflow, and newly approved recruiter opening creation.
 3. **Openings and RBAC**: Student opening creation block (403), unauthenticated access block (401), malformed token block (401), student viewing only active openings, recruiter email privacy masking, and student profile privacy enforcement.
-4. **Applications**: Duplicate application prevention (400), application status lifecycle (`applied` -> `shortlisted` -> `rejected`), and recruiter review workflow.
+4. **Applications**: Duplicate application prevention (400), application status lifecycle (`applied` -> `shortlisted` -> `accepted`), and the recruiter review workflow.
 5. **Interview Messages & Chat Gating**: Message sending rejected for unshortlisted applications (HTTP 403), message acceptance once shortlisted (HTTP 201), and character length validation (>2000 chars rejected).
-6. **Notifications**: Real-time notifications for application submission and shortlisting, single notification read tracking, cross-user notification update isolation (HTTP 403), and mark-all-as-read.
+6. **Notifications**: Notifications created on application and on shortlisting (checked through the REST endpoint), single notification read tracking, cross-user notification update isolation (HTTP 403), and mark-all-as-read.
 7. **Cleanup**: Idempotent deletion of test openings and cascaded test entities.
 
 #### Running the Postman Collection Locally

@@ -364,7 +364,7 @@ export function OpeningCandidates() {
                   </div>
 
                   {/* Action Column */}
-                  <div className="flex flex-row md:flex-col gap-2.5 shrink-0 md:w-36 md:pl-6 border-t md:border-t-0 border-border-hairline pt-4 md:pt-0">
+                  <div className="flex flex-row flex-wrap md:flex-nowrap md:flex-col gap-2.5 md:shrink-0 md:w-36 md:pl-6 border-t md:border-t-0 border-border-hairline pt-4 md:pt-0">
                     <button
                       type="button"
                       onClick={() => shortlistMutation.mutate(candidate._id)}
