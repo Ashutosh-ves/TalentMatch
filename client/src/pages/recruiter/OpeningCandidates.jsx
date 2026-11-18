@@ -37,6 +37,11 @@ export function OpeningCandidates() {
 
   const opening = openingData?.opening;
   const rawCandidates = candidatesData?.candidates || [];
+  const requiredSkillSet = new Set(
+    (opening?.requiredSkills || [])
+      .map((s) => (typeof s === 'string' ? s.toLowerCase().trim() : ''))
+      .filter(Boolean)
+  );
 
   // Shortlist Mutation
   const shortlistMutation = useMutation({
@@ -354,12 +359,28 @@ export function OpeningCandidates() {
                       <div>{getStatusBadge(candidate.status)}</div>
                     </div>
 
-                    <div className="flex flex-wrap gap-x-3 gap-y-1 font-label-mono text-xs text-primary mt-4">
-                      {opening?.requiredSkills?.map((skill) => (
-                        <span key={skill} className="px-2 py-0.5 bg-surface-container-low border border-border-hairline">
-                          {skill}
-                        </span>
-                      ))}
+                    <div className="flex flex-wrap gap-2 font-label-mono text-xs mt-4">
+                      {Array.isArray(candidate.studentSkills) && candidate.studentSkills.length > 0 ? (
+                        candidate.studentSkills.map((skill, idx) => {
+                          const isMatched = requiredSkillSet.has(
+                            typeof skill === 'string' ? skill.toLowerCase().trim() : ''
+                          );
+                          return (
+                            <span
+                              key={`${skill}-${idx}`}
+                              className={`px-2 py-0.5 border ${
+                                isMatched
+                                  ? 'border-match-indicator bg-match-indicator/10 text-match-indicator font-semibold'
+                                  : 'bg-surface-container-low border-border-hairline text-text-muted'
+                              }`}
+                            >
+                              {skill}
+                            </span>
+                          );
+                        })
+                      ) : (
+                        <span className="text-text-muted">No skills listed</span>
+                      )}
                     </div>
                   </div>
 
